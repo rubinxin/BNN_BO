@@ -5,6 +5,8 @@ Created on Fri Nov 10 13:45:16 2017
 
 @author: robin
 """
+import sys
+sys.path.insert(0, '../')
 import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
