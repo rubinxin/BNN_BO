@@ -16,17 +16,20 @@ import pdb
 # -----------------------------------------
 # The first method for sampling global optima (Recommended)
 # -----------------------------------------
-def sample_fmin_Gumble(model, lb, hb, nMs = 10, MC=False):
+def sample_fmin_Gumble(model, bounds, nMs = 10, MC=False):
     # x is n x d
     gridSize = 10000
-    x_ob = np.copy(model.X)
-    y_ob = - np.copy(model.Y)
-    d= x_ob.shape[1]
+    x_ob = np.copy(model.model.X)
+    y_ob = - np.copy(model.model.Y)
+
+    d = bounds.shape[0]
+    # bounds: d x 2
+    Xgrid = np.tile(bounds[:, 0], (gridSize, 1)) + np.tile((bounds[:, 1] - bounds[:, 0]),
+                                                           (gridSize, 1)) * np.random.rand(gridSize, d)
     # get lb and hb ,each are dx1
-    Xgrid = np.tile(lb, (gridSize,1)) + np.tile((hb-lb), (gridSize,1)) * np.random.rand(gridSize,d)
     Xgrid = np.vstack((Xgrid, x_ob))
     sx = Xgrid.shape[0]
-    #
+
     if MC == True:
         Nsamples = len(model.params[:, 0])
     else:
@@ -37,13 +40,12 @@ def sample_fmin_Gumble(model, lb, hb, nMs = 10, MC=False):
     f_max_samples = np.zeros([Nsamples, nMs])
     for i in range(Nsamples):
         if MC == True:
-            muVector, varVector = model.GP_normal[i].predict(Xgrid)
+            # muVector, varVector = model.GP_normal[i].predict(Xgrid)
+            'Not implemented'
         else:
-            muVector, varVector = model.predict(Xgrid)
+            muVector, stdVector = model.predict(Xgrid)
 
         muVector = - muVector
-        varVector = varVector.clip(noise_var)
-        stdVector = np.atleast_2d(np.sqrt(varVector))
 
         def probf(m0):
             z = (m0 - muVector)/stdVector
@@ -115,7 +117,7 @@ def find_between(val, func, funcvals, mgrid, thres):
     return res
 
 # -----------------------------------------
-# The second method for sampling global optima (Recommended)
+# The second method for sampling global optima # ToDO to be updated
 # -----------------------------------------
 def sampl_fmin_samples(model, bounds_handler,nMs = 10, nFeatures = 1000, MC=False):
     # x is n x d
@@ -274,7 +276,7 @@ def global_minimiser_cheap(func, lb, hb, X_ob, maximise= False, func_gradient=No
 
     return np.array([opt_location]), f_opt
 
-def optimise_acqu_func(acqu_func, lb, hb, X_ob, func_gradient=False, gridSize=5000, n_start=3):
+def optimise_acqu_func(acqu_func, bounds, X_ob, func_gradient=False, gridSize=5000, n_start=3):
 
     # Turn acqu_func to be - acqu_func for minimisation
     target_func = lambda x: - acqu_func._compute_acq(x)
@@ -283,10 +285,10 @@ def optimise_acqu_func(acqu_func, lb, hb, X_ob, func_gradient=False, gridSize=50
         acqu_f, dacqu_f = acqu_func._compute_acq_withGradients(x)
         return -acqu_f, -dacqu_f
 
-    bounds = list((li, ui) for li, ui in zip(lb, hb))
-    d = len(bounds)
-    # get lb and hb ,each are dx1
-    Xgrid = np.tile(lb, (gridSize, 1)) + np.tile((hb - lb), (gridSize, 1)) * np.random.rand(gridSize, d)
+    bounds_opt = list(bounds)
+    d = bounds.shape[0]
+    # bounds: d x 2
+    Xgrid = np.tile(bounds[:,0], (gridSize, 1)) + np.tile((bounds[:,1] - bounds[:,0]), (gridSize, 1)) * np.random.rand(gridSize, d)
     Xgrid = np.vstack((Xgrid, X_ob))
 
     results = target_func(Xgrid)
@@ -297,9 +299,9 @@ def optimise_acqu_func(acqu_func, lb, hb, X_ob, func_gradient=False, gridSize=50
 
     for random_start in random_starts:
         if func_gradient:
-            x, f_at_x, info = fmin_l_bfgs_b(target_func_with_gradient, random_start, bounds=bounds, approx_grad=False)
+            x, f_at_x, info = fmin_l_bfgs_b(target_func_with_gradient, random_start, bounds=bounds_opt, approx_grad=False)
         else:
-            x, f_at_x, info = fmin_l_bfgs_b(target_func, random_start, bounds=bounds, approx_grad=True)
+            x, f_at_x, info = fmin_l_bfgs_b(target_func, random_start, bounds=bounds_opt, approx_grad=True)
 
         if f_at_x < f_min:
             f_min = f_at_x
@@ -308,3 +310,14 @@ def optimise_acqu_func(acqu_func, lb, hb, X_ob, func_gradient=False, gridSize=50
     f_opt = -f_min
 
     return np.array([opt_location]), f_opt
+
+def get_init_data(obj_func, noise_var, n_init, bounds):
+    """
+    :param n_init: number of initial data points
+    :param bounds: lower bounds: bounds[:,0], upper bounds: bounds[:,1]
+    :return:
+    """
+    d = bounds.shape[0]
+    x_init = np.random.uniform(bounds[:,0], bounds[:,1], (n_init, d))
+    y_init = obj_func(x_init) + np.sqrt(noise_var) * np.random.randn(n_init, 1)
+    return x_init, y_init

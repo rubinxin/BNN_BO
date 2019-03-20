@@ -4,6 +4,7 @@
 Created on Fri Nov 10 13:45:16 2017
 
 @author: robin
+based on GPyOpt
 """
 
 import numpy as np
@@ -19,15 +20,13 @@ class EI(BaseAcquisition):
     Expected improvement acquisition function
     """
 
-    analytical_gradient_prediction = True
-
     def __init__(self, model, jitter=0.01):
         self.model = model
         self.jitter = jitter
 
     def _compute_acq(self, x):
         """
-        Computes the Expected Improvement per unit of cost
+        Computes the Expected Improvement
         """
         m, s = self.model.predict(x)
         fmin = self.model.get_fmin()
@@ -37,7 +36,7 @@ class EI(BaseAcquisition):
 
     def _compute_acq_withGradients(self, x):
         """
-        Computes the Expected Improvement and its derivative (has a very easy derivative!)
+        Computes the Expected Improvement and its derivative
         """
         fmin = self.model.get_fmin()
         m, s, dmdx, dsdx = self.model.predict_withGradients(x)
@@ -46,13 +45,10 @@ class EI(BaseAcquisition):
         df_acqu = dsdx * phi - Phi * dmdx
         return f_acqu, df_acqu
 
-
 class LCB(BaseAcquisition):
     """
     Lower Confidence Bound acquisition function
     """
-
-    analytical_gradient_prediction = True
 
     def __init__(self, model, beta=3):
         self.model = model
@@ -60,7 +56,7 @@ class LCB(BaseAcquisition):
 
     def _compute_acq(self, x):
         """
-        Computes the Expected Improvement per unit of cost
+        Computes the LCB
         """
         m, s = self.model.predict(x)
         f_acqu = - (m - self.beta * s)
@@ -68,10 +64,38 @@ class LCB(BaseAcquisition):
 
     def _compute_acq_withGradients(self, x):
         """
-        Computes the Expected Improvement and its derivative (has a very easy derivative!)
+        Computes the LCB and its derivative
         """
         fmin = self.model.get_fmin()
         m, s, dmdx, dsdx = self.model.predict_withGradients(x)
         f_acqu = -m + self.beta * s
         df_acqu = -dmdx + self.beta * dsdx
         return f_acqu, df_acqu
+
+class MES(BaseAcquisition):
+    """
+    Max-value Entropy Search acquisition function
+    -> require fmin samples
+    """
+
+    def __init__(self, model, beta=3):
+        self.model = model
+
+    def _compute_acq(self, x):
+        x = np.atleast_2d(x)
+
+        f_acqu_at_x = 0
+        fmin_samples = self.model.fmin_samples.flatten()
+        n_fmin_samples = len(fmin_samples)
+
+        for i in range(n_fmin_samples):
+            m, s = self.model.predict(x)
+
+            gamma = (fmin_samples[i] - m)/s
+            pdfgamma = np.exp(-0.5 * gamma**2) / np.sqrt(2*np.pi)
+            cdfgamma = 0.5 * erfc(-gamma / np.sqrt(2))
+            Z = 1 - cdfgamma
+            f_acqu_at_x += - gamma * pdfgamma/(2*Z) - np.log(Z)
+
+        mean_f_acqu = f_acqu_at_x / (n_fmin_samples)
+        return mean_f_acqu
