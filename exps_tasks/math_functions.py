@@ -11,6 +11,25 @@ from typing import Tuple, Callable
 import numpy as np
 import GPy
 
+def GM1D(x):
+    '''1D gaussian mixture'''
+    x = np.atleast_2d(x)
+    var_1 = 0.05
+    var_2 = 0.03
+    var_3 = 0.01
+    var_4 = 0.03
+
+    mean_1 = -0.3
+    mean_2 = 0
+    mean_3 = 0.2
+    mean_4 = 0.6
+
+    f = 1.5 - (((1 / np.sqrt(2 * np.pi * var_1)) * np.exp(-pow(x - mean_1, 2) / var_1)) \
+               + ((1 / np.sqrt(2 * np.pi * var_2)) * np.exp(-pow(x - mean_2, 2) / var_2)) \
+               + ((1 / np.sqrt(2 * np.pi * var_3)) * np.exp(-pow(x - mean_3, 2) / var_2))
+               + ((1 / np.sqrt(2 * np.pi * var_4)) * np.exp(-pow(x - mean_4, 2) / var_2)))
+    return f[:, None]
+
 def egg(x):
     """Eggholder function
 
@@ -279,8 +298,6 @@ def levy(x):
 
     return y[:, None]
 
-
-
 def get_function(target_func, big=False) \
         -> Tuple[Callable, np.ndarray, np.ndarray, float]:
     """
@@ -301,6 +318,13 @@ def get_function(target_func, big=False) \
         min_val = f(min_loc)
 
         X_LIM = np.array([[-1, 1], [-1, 1]])
+
+    elif target_func.startswith('GM-1d'):
+        f = GM1D
+
+        min_loc = np.array([0.2])
+        min_val = f(min_loc)
+        X_LIM = np.array([[-1, 1]])
 
     elif target_func.startswith('twosines'):
         dim = get_dim_from_name(target_func)
