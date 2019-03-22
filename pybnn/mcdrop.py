@@ -40,7 +40,7 @@ class MCDROP(BaseModel):
                  learning_rate=0.01,
                  adapt_epoch=5000, n_units_1=50, n_units_2=50, n_units_3=50,
                  dropout = 0.05, tau = 1.0, T = 100,
-                 normalize_input=True, normalize_output=True, rng=None):
+                 normalize_input=True, normalize_output=True, rng=None, gpu=True):
         """
         This module performs MC Dropout for a fully connected
         feed forward neural network.
@@ -88,6 +88,7 @@ class MCDROP(BaseModel):
         self.T = T
         self.normalize_input = normalize_input
         self.normalize_output = normalize_output
+        self.gpu = gpu
 
         self.num_epochs = num_epochs
         self.batch_size = batch_size
@@ -99,6 +100,9 @@ class MCDROP(BaseModel):
         self.adapt_epoch = adapt_epoch # TODO check
         self.network = None
         self.models = []
+
+        # Use GPU
+        self.device = torch.device("cuda: 0" if torch.cuda.is_available() else "cpu")
 
     @BaseModel._check_shapes_train
     def train(self, X, y):
@@ -141,6 +145,9 @@ class MCDROP(BaseModel):
 
         network = Net(n_inputs=features, dropout=self.dropout, n_units=[self.n_units_1, self.n_units_2, self.n_units_3])
 
+        if self.gpu:
+            network = network.to(self.device)
+
         optimizer = optim.Adam(network.parameters(),
                                lr=self.init_learning_rate)
 
@@ -155,8 +162,12 @@ class MCDROP(BaseModel):
 
             for batch in self.iterate_minibatches(self.X, self.y,
                                                   batch_size, shuffle=True):
-                inputs = torch.Tensor(batch[0])
-                targets = torch.Tensor(batch[1])
+                if self.gpu:
+                    inputs = torch.Tensor(batch[0]).to(self.device)
+                    targets = torch.Tensor(batch[1]).to(self.device)
+                else:
+                    inputs = torch.Tensor(batch[0])
+                    targets = torch.Tensor(batch[1])
 
                 optimizer.zero_grad()
                 output = network(inputs)

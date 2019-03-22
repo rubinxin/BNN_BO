@@ -36,7 +36,7 @@ def sinc1D(x):
     # x = np.atleast_2d(x)
     x = (x + 1)/2
     f = np.sinc(x * 10 - 5)
-    f = np.atleast_2d(10*f)
+    f = np.atleast_2d(f)
     return f
 
 def egg(x):

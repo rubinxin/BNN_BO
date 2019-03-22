@@ -69,7 +69,7 @@ class Bohamiann(BaseModel):
                  metrics=(nn.MSELoss,),
                  likelihood_function=nll,
                  print_every_n_steps=100,
-                 ) -> None:
+                 gpu=True) -> None:
         """
 
         Bayesian Neural Networks use Bayesian methods to estimate the posterior
@@ -106,6 +106,8 @@ class Bohamiann(BaseModel):
         self.sampled_weights = []  # type: typing.List[typing.Tuple[np.ndarray]]
         self.likelihood_function = likelihood_function
         self.sampler = None
+        self.gpu = gpu
+        self.device = torch.device("cuda: 0" if torch.cuda.is_available() else "cpu")
 
     @property
     def network_weights(self) -> tuple:
@@ -259,9 +261,17 @@ class Bohamiann(BaseModel):
                                      mdecay=dtype(mdecay),
                                      lr=dtype(lr))
 
+        if self.gpu:
+            self.model = self.model.to(self.device)
+
         batch_generator = islice(enumerate(train_loader), num_steps)
 
         for step, (x_batch, y_batch) in batch_generator:
+
+            if self.gpu:
+                x_batch = x_batch.to(self.device)
+                y_batch = y_batch.to(self.device)
+
             self.sampler.zero_grad()
             loss = self.likelihood_function(input=self.model(x_batch), target=y_batch)
             # Add prior. Note the gradient is computed by: g_prior + N/n sum_i grad_theta_xi see Eq 4

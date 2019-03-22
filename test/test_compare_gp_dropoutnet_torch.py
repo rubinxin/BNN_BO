@@ -19,7 +19,7 @@ import os
 '''
 Test
 '''
-func_name = 'GM-1d'
+func_name = 'sinc-1d'
 # func_name = 'camelback-2d'
 f, x_bounds, _, true_fmin = get_function(func_name)
 d = x_bounds.shape[0]
@@ -30,7 +30,8 @@ def test_compare_gp_with_dropnet():
     #  Specify the objective function and parameters (noise variance, input dimension, initial observation
     np.random.seed(3)
     x_ob, y_ob = get_init_data(obj_func=f, noise_var=var_noise, n_init =n_init, bounds=x_bounds)
-
+    rng = np.random.RandomState(42)
+    x = rng.rand(n_init)
 
     # ------ Test grid -------- #
     if d == 2:
@@ -64,9 +65,9 @@ def test_compare_gp_with_dropnet():
     m_gp, s_gp = GP.predict(X)
 
     # -- MCDropoutNet or DNGO model ----#
-    # Net = DNGOWrap()
+    Net = DNGOWrap()
     # Net = MCDROPWarp()
-    Net = BOHAMIANNWarp(num_samples=600)
+    # Net = BOHAMIANNWarp(num_samples=600)
     Net._update_model(x_ob, y_ob)
     m_net, s_net = Net.predict(X)
 
