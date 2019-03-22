@@ -181,6 +181,9 @@ class DNGO(BaseModel):
         if self.gpu:
             # print('use gpu')
             self.network = network.to(self.device)
+            self.X = self.X.to(self.device)
+            self.y = self.y.to(self.device)
+
         else:
             # print('use cpu')
             self.network = network
@@ -200,12 +203,12 @@ class DNGO(BaseModel):
             for batch in self.iterate_minibatches(self.X, self.y,
                                                   batch_size, shuffle=True):
 
-                if self.gpu:
-                    inputs = torch.Tensor(batch[0]).to(self.device)
-                    targets = torch.Tensor(batch[1]).to(self.device)
-                else:
-                    inputs = torch.Tensor(batch[0])
-                    targets = torch.Tensor(batch[1])
+                # if self.gpu:
+                #     inputs = torch.Tensor(batch[0]).to(self.device)
+                #     targets = torch.Tensor(batch[1]).to(self.device)
+                # else:
+                inputs = torch.Tensor(batch[0])
+                targets = torch.Tensor(batch[1])
 
                 optimizer.zero_grad()
                 output = self.network(inputs)
