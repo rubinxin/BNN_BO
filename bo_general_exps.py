@@ -37,8 +37,8 @@ def BNN_BO_Exps(obj_func, model_type, bo_method, batch_option, batch_size,
         # run Bayesian optimisation:
         bayes_opt = Bayes_opt(func=f, bounds = x_bounds, noise_var=var_noise)
         # model_type: GP or MCDROP or DNGO or BOHAM
-        bayes_opt.initialise(X_init=x_init, Y_init=y_init, model_type='GP', bo_method='EI',
-                             batch_option=batch_option, batch_size=1,)
+        bayes_opt.initialise(X_init=x_init, Y_init=y_init, model_type=model_type, bo_method=bo_method,
+                             batch_option=batch_option, batch_size=batch_size)
 
         # output of Bayesian optimisation:
         X_query,Y_query,X_opt,Y_opt = bayes_opt.iteration_step(iterations=num_iter, seed=seed)
@@ -83,9 +83,9 @@ if __name__ == '__main__':
     parser.add_argument('-b', '--batch_size', help='BO Batch size. Default = 1',
                         default=1, type=int)
     parser.add_argument('-nitr', '--max_itr', help='Max BO iterations. Default = 40',
-                        default=10, type=int)
+                        default=40, type=int)
     parser.add_argument('-s', '--nseeds', help='Number of random initialisation. Default = 20',
-                        default=2, type=int)
+                        default=20, type=int)
 
     args = parser.parse_args()
     print(f"Got arguments: \n{args}")
