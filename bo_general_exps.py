@@ -22,7 +22,8 @@ def BNN_BO_Exps(obj_func, model_type, bo_method, batch_option, batch_size,
     #  Specify the objective function and parameters (noise variance, input dimension, initial observation
     f, x_bounds, _, true_fmin = get_function(obj_func)
     var_noise = 1.0e-10
-    n_init = 30
+    d = x_bounds.shape[0]
+    n_init = d*10
     X_opt_all_seeds = []
     Y_opt_all_seeds = []
     X_query_all_seeds = []
@@ -73,7 +74,7 @@ def BNN_BO_Exps(obj_func, model_type, bo_method, batch_option, batch_size,
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Run BayesOpt Experiments")
     parser.add_argument('-f', '--func', help='Objective function',
-                        default='egg-2d', type=str)
+                        default='hartmann-6d', type=str)
     parser.add_argument('-m', '--model', help='Surrogate model: GP or MCDROP or DNGO or BOHAM',
                         default='GP', type=str)
     parser.add_argument('-acq', '--acq_func', help='Acquisition function: LCB, EI, MES',
