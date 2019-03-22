@@ -40,7 +40,7 @@ class MCDROP(BaseModel):
                  learning_rate=0.01,
                  adapt_epoch=5000, n_units_1=50, n_units_2=50, n_units_3=50,
                  dropout = 0.05, tau = 1.0, T = 100,
-                 normalize_input=True, normalize_output=True, rng=None, gpu=True):
+                 normalize_input=True, normalize_output=True, rng=None, gpu=False):
         """
         This module performs MC Dropout for a fully connected
         feed forward neural network.

@@ -43,7 +43,7 @@ class DNGO(BaseModel):
                  adapt_epoch=5000, n_units_1=50, n_units_2=50, n_units_3=50,
                  alpha=1.0, beta=1000, prior=None, do_mcmc=True,
                  n_hypers=20, chain_length=2000, burnin_steps=2000,
-                 normalize_input=True, normalize_output=True, rng=None, gpu=True):
+                 normalize_input=True, normalize_output=True, rng=None, gpu=False):
         """
         Deep Networks for Global Optimization [1]. This module performs
         Bayesian Linear Regression with basis function extracted from a

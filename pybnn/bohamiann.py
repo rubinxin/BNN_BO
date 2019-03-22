@@ -69,7 +69,7 @@ class Bohamiann(BaseModel):
                  metrics=(nn.MSELoss,),
                  likelihood_function=nll,
                  print_every_n_steps=100,
-                 gpu=True) -> None:
+                 gpu=False) -> None:
         """
 
         Bayesian Neural Networks use Bayesian methods to estimate the posterior
