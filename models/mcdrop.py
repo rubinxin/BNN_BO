@@ -36,6 +36,7 @@ class MCDROPWarp(BaseModel):
         """
         Predictions with the model. Returns predictive means and standard deviations at X.
         """
+        X = np.atleast_2d(X)
         m, v = self.model.predict(X)
         # m and v have shape (N,)
         s = np.sqrt(v)
