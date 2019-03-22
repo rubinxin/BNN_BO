@@ -16,7 +16,7 @@ import os
 '''
 Test
 '''
-func_name = 'camelback-2d'
+func_name = 'GM-1d'
 f, x_bounds, _, true_fmin = get_function(func_name)
 d = x_bounds.shape[0]
 n_init = 20
@@ -29,12 +29,13 @@ def test_gp():
 
 
     # ------ Test grid -------- #
-    x1, x2 = np.mgrid[-1:1:50j, -1:1:50j]
-    X = np.vstack((x1.flatten(), x2.flatten())).T
-    y = f(X)
-    # X = np.atleast_2d([0.1, 0.9])
-
-
+    if d == 2:
+        x1, x2 = np.mgrid[-1:1:50j, -1:1:50j]
+        X = np.vstack((x1.flatten(), x2.flatten())).T
+        y = f(X)
+    else:
+        X = np.linspace(-1,1,100)[:,None]
+        y = f(X)
 
     # -- GP model ----#
     # kern = GPy.kern.Matern52(2, variance=1., ARD=True)
@@ -43,16 +44,25 @@ def test_gp():
     m, s = GP.predict(X)
 
     # # ------ Plot figures -------- #
-    figure, axes = plt.subplots(2,1, figsize=(10, 10))
-    sub1 = axes[0].contourf(x1, x2, y.reshape(50, 50))
-    axes[0].plot(x_ob[:,0], x_ob[:,1],'rx')
-    axes[0].set_title('objective func ')
+    if d == 2:
+        figure, axes = plt.subplots(2, 1, figsize=(10, 10))
+        sub1 = axes[0].contourf(x1, x2, y.reshape(50, 50))
+        axes[0].plot(x_ob[:,0], x_ob[:,1],'rx')
+        axes[0].set_title('objective func ')
 
-    sub2 = axes[1].contourf(x1, x2, m.reshape(50, 50))
-    axes[1].plot(x_ob[:,0], x_ob[:,1],'rx')
-    pred_title=f'prediction by GP'
-    axes[1].set_title(pred_title)
-    plt.show()
+        sub2 = axes[1].contourf(x1, x2, m.reshape(50, 50))
+        axes[1].plot(x_ob[:,0], x_ob[:,1],'rx')
+        pred_title=f'prediction by GP'
+        axes[1].set_title(pred_title)
+        plt.show()
+    else:
+        figure, axes = plt.subplots(1, 1, figsize=(10, 10))
+        axes.plot(x_ob,y_ob, 'rx')
+        axes.plot(X, y, 'r--')
+        axes.plot(X, m, 'b')
+        axes.fill_between(X.flatten(), (m - s).flatten(), (m + s).flatten(), color='blue', alpha=0.30)
+        axes.set_title('1D Regression')
+        plt.show()
 
     # ------ Save figures -------- #
     saving_path = 'data/syntheticFns/'

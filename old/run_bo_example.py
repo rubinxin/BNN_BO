@@ -6,7 +6,7 @@ Created on Fri Nov 10 13:45:16 2017
 @author: robin
 """
 import numpy as np
-from BayesOpt import Bayes_opt
+from old.BayesOpt import Bayes_opt
 from exps_tasks.math_functions import get_function
 from utilities.utilities import get_init_data
 

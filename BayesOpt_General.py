@@ -8,9 +8,12 @@ Created on Fri Nov 10 13:45:16 2017
 
 import numpy as np
 from acq_funcs.acquisitions import EI, LCB, MES
+from acq_funcs.acq_optimizer import Acq_Optimizer
 from models.gp import GPModel
-from models.dropoutnn import DropoutNet
-from utilities.utilities import optimise_acqu_func, sample_fmin_Gumble
+from models.mcdrop import MCDROPWarp
+from models.dngo import DNGOWrap
+from models.bohamiann import BOHAMIANNWarp
+from utilities.utilities import sample_fmin_Gumble
 
 class Bayes_opt():
     def __init__(self, func, bounds, noise_var):
@@ -18,7 +21,8 @@ class Bayes_opt():
         self.bounds = bounds
         self.noise_var = noise_var
 
-    def initialise(self, X_init=None, Y_init=None, kernel=None, n_fmin_samples=1, model_type='GP',dropout=0.05, T = 100, n_hidden=[50, 50, 50], tau=1.0, batch_size=5):
+    def initialise(self, X_init=None, Y_init=None, kernel=None, n_fmin_samples=1, model_type='GP',
+                   n_hidden=[50, 50, 50], bo_method='LCB', batch_option='CL',  batch_size=2):
         assert X_init.ndim == 2, "X_init has to be 2D array"
         assert Y_init.ndim == 2, "Y_init has to be 2D array"
         self.X_init = X_init
@@ -26,6 +30,10 @@ class Bayes_opt():
         self.X = np.copy(X_init)
         self.Y = np.copy(Y_init)
         self.n_fmin_samples = n_fmin_samples
+        self.bo_method = bo_method
+        self.batch_option = batch_option
+        self.batch_size = batch_size
+        self.model_type = model_type
 
         # Input dimension
         self.X_dim = self.X.shape[1]
@@ -41,84 +49,98 @@ class Bayes_opt():
                 self.model = GPModel(kernel=kernel, noise_var=self.noise_var, ARD=self.ARD )
             else:
                 self.model = GPModel(kernel=kernel, exact_feval=True, ARD=self.ARD)
-        elif model_type == 'DropNN':
-            self.model = DropoutNet(n_hidden=n_hidden, dropout=dropout, T = T, tau=tau, batch_size=batch_size)
 
-    def iteration_step(self, iterations, seed, bo_method):
+        elif model_type == 'MCDROP':
+            self.model = MCDROPWarp(mini_batch_size=10,n_units=[50, 50, 50],
+                                    dropout = 0.05, tau = 1.0, T = 1000)
+        elif model_type == 'DNGO':
+            self.model = DNGOWrap(mini_batch_size=10, n_units=n_hidden)
+
+        elif model_type == 'BOHAM':
+            self.model = BOHAMIANNWarp(num_samples=6000, keep_every=50)
+
+        # Specify acquisition function
+        if self.bo_method == 'EI':
+            acqu_func = EI(self.model)
+        elif self.bo_method == 'LCB':
+            acqu_func = LCB(self.model)
+        elif self.bo_method == 'MES':
+            fmin_samples = sample_fmin_Gumble(self.X, self.Y, self.model, self.bounds, nMs=self.n_fmin_samples)
+            self.model.fmin_samples = fmin_samples
+            acqu_func = MES(self.model)
+
+        self.query_strategy = Acq_Optimizer(model=self.model, acqu_func=acqu_func, bounds=self.bounds,
+                                            batch_size=batch_size, batch_method=batch_option)
+
+    def iteration_step(self, iterations, seed):
+
         np.random.seed(seed)
 
-        X_optimum = np.copy(np.atleast_2d(self.arg_opt))
-        Y_optimum = np.copy(np.atleast_2d(self.minY))
-        X_for_L2  = np.copy(X_optimum)
-        Y_for_IR  = np.copy(Y_optimum)
+        X_query = np.copy(self.X)
+        Y_query = np.copy(self.Y)
+        X_opt  = np.copy(np.atleast_2d(self.arg_opt))
+        Y_opt  = np.copy(np.atleast_2d(self.minY))
 
         self.e = np.exp(1)
 
         #  Fit GP model to the data
         self.model._update_model(self.X, self.Y)
 
-        # Specify acquisition function
-        if bo_method == 'EI':
-            acqu_func = EI(self.model)
-        elif bo_method == 'LCB':
-            acqu_func = LCB(self.model)
-        elif bo_method == 'MES':
-            fmin_samples = sample_fmin_Gumble(self.model, self.bounds, nMs=self.n_fmin_samples)
-            self.model.fmin_samples = fmin_samples
-            acqu_func = MES(self.model)
-
         for k in range(iterations):
 
             np.random.seed(seed)
 
             # optimise the acquisition function to get the next query point and evaluate at next query point
-
-            x_next, max_acqu_value = optimise_acqu_func(acqu_func=acqu_func, bounds = self.bounds,X_ob=self.X)
-            y_next = self.func(x_next) + np.random.normal(0, np.sqrt(self.noise_var), len(x_next))
+            # x_next, max_acqu_value = optimise_acqu_func(acqu_func=acqu_func, bounds = self.bounds,X_ob=self.X)
+            x_next_batch, acqu_value_batch = self.query_strategy.get_next(self.X, self.Y)
+            max_acqu_value = np.max(acqu_value_batch)
+            y_next_batch = self.func(x_next_batch) + np.random.normal(0, np.sqrt(self.noise_var), (x_next_batch.shape[0],1))
 
             # augment the observation data
-            self.X = np.vstack((self.X, x_next))
-            self.Y = np.vstack((self.Y, y_next))
+            self.X = np.vstack((self.X, x_next_batch))
+            self.Y = np.vstack((self.Y, y_next_batch))
 
             #  update GP model with new data
             self.model._update_model(self.X, self.Y)
             self.minY = np.min(self.Y)
 
             #  resample the global minimum for MES
-            if bo_method == 'MES':
-                fmin_samples = sample_fmin_Gumble(self.model, self.bounds, nMs=self.n_fmin_samples)
+            if self.bo_method == 'MES':
+                fmin_samples = sample_fmin_Gumble(self.X, self.Y,self.model, self.bounds, nMs=self.n_fmin_samples)
                 self.model.fmin_samples = fmin_samples
 
             # optimise the marginalised posterior mean to get the prediction for the global optimum/optimiser
             # x_opt, pos_opt = self._global_minimiser_cheap(self.pos_mean,func_gradient=self.d_pos_mean)
             # y_opt = self.func(x_opt)
+            
             #  store data
-            x_opt = np.copy(x_next)
-            y_opt = np.copy(y_next)
-            X_optimum = np.concatenate((X_optimum, np.atleast_2d(x_opt)))
-            Y_optimum = np.concatenate((Y_optimum, np.atleast_2d(y_opt)))
-            X_for_L2 = np.concatenate((X_for_L2, np.atleast_2d(X_optimum[np.argmin(Y_optimum),:])))
-            Y_for_IR = np.concatenate((Y_for_IR, np.atleast_2d(min(Y_optimum))))
+            X_query = np.vstack((X_query, np.atleast_2d(x_next_batch)))
+            Y_query = np.vstack((Y_query, np.atleast_2d(y_next_batch)))
+            X_opt = np.concatenate((X_opt, np.atleast_2d(X_query[np.argmin(Y_query),:])))
+            Y_opt = np.concatenate((Y_opt, np.atleast_2d(min(Y_query))))
 
-            if bo_method == 'MES':
-                print( bo_method + ":seed:{seed},itr:{iteration},fmin_sampled:{min_sample}, x_next: {next_query_loc},y_next:{next_query_value}, acq value: {best_acquisition_value},"
-                                        "x_opt:{x_opt_pred},y_opt:{y_opt_pred}"
+            if self.bo_method == 'MES':
+                print( self.model_type + self.bo_method + self.batch_option + str(self.batch_size)+
+                       ":seed:{seed},itr:{iteration},fmin_sampled:{min_sample}, x_next: {next_query_loc},"
+                        "y_next:{next_query_value}, acq value: {best_acquisition_value},x_opt:{x_opt_pred},"
+                       "y_opt:{y_opt_pred}"
                     .format(seed=seed, iteration=k,
                             min_sample = np.max(fmin_samples),
-                            next_query_loc=x_next, next_query_value=y_next,
+                            next_query_loc= x_next_batch[np.argmin(y_next_batch),:], next_query_value=np.min(y_next_batch),
                             best_acquisition_value=max_acqu_value,
-                            x_opt_pred=X_for_L2[-1, :],
-                            y_opt_pred=Y_for_IR[-1, :]
+                            x_opt_pred=X_opt[-1, :],
+                            y_opt_pred=Y_opt[-1, :]
                             ))
             else:
-                print( bo_method +"seed:{seed},itr:{iteration},x_next: {next_query_loc},y_next:{next_query_value}, acq value: {best_acquisition_value},"
-                    "x_opt:{x_opt_pred},y_opt:{y_opt_pred}"
+                print( self.model_type + self.bo_method + self.batch_option + str(self.batch_size)+
+                       "seed:{seed},itr:{iteration}, x_next: {next_query_loc},y_next:{next_query_value}, "
+                       "acq value: {best_acquisition_value},x_opt:{x_opt_pred},y_opt:{y_opt_pred}"
                     .format(seed = seed,iteration=k,
-                            next_query_loc=x_next,next_query_value=y_next,
+                            next_query_loc=x_next_batch[np.argmin(y_next_batch),:],next_query_value=np.min(y_next_batch),
                             best_acquisition_value=max_acqu_value,
-                            x_opt_pred=X_for_L2[-1,:],
-                            y_opt_pred=Y_for_IR[-1,:]
+                            x_opt_pred=X_opt[-1,:],
+                            y_opt_pred=Y_opt[-1,:]
                             ))
 
-        return self.X, self.Y, X_for_L2, Y_for_IR
+        return X_query, Y_query, X_opt, Y_opt
 

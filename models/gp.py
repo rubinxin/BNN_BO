@@ -27,8 +27,9 @@ class GPModel(BaseModel):
 
     analytical_gradient_prediction = True  # --- Needed in all models to check is the gradients of acquisitions are computable.
 
-    def __init__(self, kernel=None, noise_var=None, exact_feval=False, optimizer='bfgs', max_iters=1000, optimize_restarts=5,
-                 sparse = False, num_inducing = 10,  verbose=False, ARD=False):
+    def __init__(self, kernel=None, noise_var=None, exact_feval=False, optimizer='bfgs',
+                 max_iters=1000, optimize_restarts=5,sparse = False, num_inducing = 10,
+                 verbose=False, ARD=False):
         self.kernel = kernel
         self.noise_var = noise_var
         self.exact_feval = exact_feval

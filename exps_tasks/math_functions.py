@@ -13,7 +13,7 @@ import GPy
 
 def GM1D(x):
     '''1D gaussian mixture'''
-    x = np.atleast_2d(x)
+    # x = np.atleast_2d(x)
     var_1 = 0.05
     var_2 = 0.03
     var_3 = 0.01
@@ -28,7 +28,16 @@ def GM1D(x):
                + ((1 / np.sqrt(2 * np.pi * var_2)) * np.exp(-pow(x - mean_2, 2) / var_2)) \
                + ((1 / np.sqrt(2 * np.pi * var_3)) * np.exp(-pow(x - mean_3, 2) / var_2))
                + ((1 / np.sqrt(2 * np.pi * var_4)) * np.exp(-pow(x - mean_4, 2) / var_2)))
-    return f[:, None]
+    f = np.atleast_2d(10*f)
+    return f
+
+def sinc1D(x):
+    '''1D sinc function'''
+    # x = np.atleast_2d(x)
+    x = (x + 1)/2
+    f = np.sinc(x * 10 - 5)
+    f = np.atleast_2d(10*f)
+    return f
 
 def egg(x):
     """Eggholder function
@@ -323,6 +332,12 @@ def get_function(target_func, big=False) \
         f = GM1D
 
         min_loc = np.array([0.2])
+        min_val = f(min_loc)
+        X_LIM = np.array([[-1, 1]])
+
+    elif target_func.startswith('sinc-1d'):
+        f = sinc1D
+        min_loc = np.array([0.0])
         min_val = f(min_loc)
         X_LIM = np.array([[-1, 1]])
 

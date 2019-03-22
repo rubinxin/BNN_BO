@@ -16,11 +16,11 @@ import pdb
 # -----------------------------------------
 # The first method for sampling global optima (Recommended)
 # -----------------------------------------
-def sample_fmin_Gumble(model, bounds, nMs = 10, MC=False):
+def sample_fmin_Gumble(X, Y, model, bounds, nMs = 10, MC=False):
     # x is n x d
     gridSize = 10000
-    x_ob = np.copy(model.model.X)
-    y_ob = - np.copy(model.model.Y)
+    x_ob = np.copy(X)
+    y_ob = - np.copy(Y)
 
     d = bounds.shape[0]
     # bounds: d x 2
@@ -319,5 +319,6 @@ def get_init_data(obj_func, noise_var, n_init, bounds):
     """
     d = bounds.shape[0]
     x_init = np.random.uniform(bounds[:,0], bounds[:,1], (n_init, d))
-    y_init = obj_func(x_init) + np.sqrt(noise_var) * np.random.randn(n_init, 1)
+    f_init = obj_func(x_init)
+    y_init = f_init + np.sqrt(noise_var) * np.random.randn(n_init, 1)
     return x_init, y_init
