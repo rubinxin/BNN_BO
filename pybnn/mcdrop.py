@@ -231,7 +231,15 @@ class MCDROP(BaseModel):
         T     = self.T
 
         # Yt_hat: T x N x 1
-        Yt_hat = np.array([model(torch.Tensor(X_)).data.numpy() for _ in range(T)])
+
+        X_tensor = torch.Tensor(X_)
+        if self.gpu:
+            model.cpu()
+            Yt_hat = np.array([model(X_tensor).data.numpy() for _ in range(T)])
+            # X_tensor = X_tensor.to(self.device)
+            # Yt_hat = np.array([model(X_tensor).cpu().detach().numpy() for _ in range(T)])
+        else:
+            Yt_hat = np.array([model(X_tensor).data.numpy() for _ in range(T)])
         # Yt_hat = Yt_hat * self.std_y_train + self.mean_y_train  # T x N TODO check with Adam
 
         MC_pred_mean = np.mean(Yt_hat, 0)  # N x 1

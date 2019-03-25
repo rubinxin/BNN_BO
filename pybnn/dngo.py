@@ -43,7 +43,7 @@ class DNGO(BaseModel):
                  adapt_epoch=5000, n_units_1=50, n_units_2=50, n_units_3=50,
                  alpha=1.0, beta=1000, prior=None, do_mcmc=True,
                  n_hypers=20, chain_length=2000, burnin_steps=2000,
-                 normalize_input=True, normalize_output=True, rng=None, gpu=False):
+                 normalize_input=True, normalize_output=True, rng=None, gpu=True):
         """
         Deep Networks for Global Optimization [1]. This module performs
         Bayesian Linear Regression with basis function extracted from a
@@ -204,8 +204,8 @@ class DNGO(BaseModel):
                 targets = torch.Tensor(batch[1])
 
                 if self.gpu:
-                    inputs.to(self.device)
-                    targets.to(self.device)
+                    inputs = inputs.to(self.device)
+                    targets = targets.to(self.device)
 
                 optimizer.zero_grad()
                 output = self.network(inputs)
@@ -226,9 +226,12 @@ class DNGO(BaseModel):
 
         # Design matrix
         X_tensor = torch.Tensor(self.X)
+
+        network = self.network
         if self.gpu:
-            X_tensor.to(self.device)
-        self.Theta = self.network.basis_funcs(X_tensor).data.numpy()
+            network.cpu()
+
+        self.Theta = network.basis_funcs(X_tensor).data.numpy()
 
         if do_optimize:
             if self.do_mcmc:
@@ -379,8 +382,12 @@ class DNGO(BaseModel):
             X_ = X_test
 
         # Get features from the net
+        if self.gpu:
+            network = self.network.cpu()
+        else:
+            network = self.network
 
-        theta = self.network.basis_funcs(torch.Tensor(X_)).data.numpy()
+        theta = network.basis_funcs(torch.Tensor(X_)).data.numpy()
 
         # Marginalise predictions over hyperparameters of the BLR
         mu = np.zeros([len(self.models), X_test.shape[0]])

@@ -15,7 +15,7 @@ Run Bayesian optimisation experiments: `python bo_general_exps.py` followed by t
   * `-b` BO Batch size: default = `1`                    
   * `-nitr` Max BO iterations: default = `40`
   * `-s` Number of random initialisation: default = `20`
-  E.g. `python bo_general_exps.py -f='egg-2d' -m='GP' -acq='LCB' -bm='CL' -b=1 -nitr=40 -s=20`
+  E.g. `python bo_general_exps.py -f='egg-2d' -m='GP' -acq='LCB' -bm='CL' -b=1 -nitr=60 -s=10`
 
 ## Requirement
  * python 3

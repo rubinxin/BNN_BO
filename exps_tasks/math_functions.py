@@ -130,6 +130,8 @@ def hartmann6(x):
     # Re-scale input space from [-1, 1]^6 (X_LIM) to
     # [0,1]^6 (original definition of the function)
     # so that code below still works
+    x = np.atleast_2d(x)
+
     x = (x + 1) / 2.
 
     alpha = [1.00, 1.20, 3.00, 3.20]
@@ -149,7 +151,7 @@ def hartmann6(x):
             internal_sum += A[i, j] * (x[:, j] - P[i, j]) ** 2
         external_sum += alpha[i] * np.exp(-internal_sum)
 
-    return external_sum[:, None]
+    return - external_sum[:, None]
 
 def ackley(x):
     """
@@ -275,7 +277,7 @@ def rosenbrock(x):
     x /= 2.048  # scaling x from [-2.048, 2.048] to [-1, 1]
     f =  (1 - x[:, 0]) ** 2 + 100 * (x[:, 1] - x[:, 0] ** 2) ** 2
 
-    return y[:, None]
+    return f[:, None]
 
 
 def rosenbrock_small(x):

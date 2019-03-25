@@ -106,7 +106,7 @@ class Bohamiann(BaseModel):
         self.sampled_weights = []  # type: typing.List[typing.Tuple[np.ndarray]]
         self.likelihood_function = likelihood_function
         self.sampler = None
-        self.gpu = gpu
+        self.gpu = gpu #TODO not working for gpu
         self.device = torch.device("cuda: 0" if torch.cuda.is_available() else "cpu")
 
     @property

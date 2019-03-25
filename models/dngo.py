@@ -1,7 +1,6 @@
 from pybnn.dngo import DNGO
 from .base import BaseModel
 import numpy as np
-
 class DNGOWrap(BaseModel):
     """
     A Wrapper for MC Dropout for a fully connected
