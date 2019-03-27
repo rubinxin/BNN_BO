@@ -16,7 +16,7 @@ import pickle
 '''
 Test
 '''
-seed_size = 10
+seed_size = 3
 model_type = 'GP'
 batch_size = 1
 bo_method = 'LCB'
@@ -46,7 +46,7 @@ for j in range(seed_size):
     bayes_opt.initialise(X_init=x_init, Y_init=y_init, model_type=model_type, batch_size=1, bo_method=bo_method)
 
     # output of Bayesian optimisation:
-    X_query,Y_query,X_opt,Y_opt = bayes_opt.iteration_step(iterations=20, seed=seed)
+    X_query,Y_query,X_opt,Y_opt, time_record = bayes_opt.iteration_step(iterations=20, seed=seed)
     # X_query, Y_query - query points selected by BO;
     # X_opt, Yopt      - guesses of the global optimum/optimiser (= optimum point of GP posterior mean)
 
@@ -68,7 +68,8 @@ for j in range(seed_size):
     results = {'X_opt': X_opt_all_seeds,
                'Y_opt': Y_opt_all_seeds,
                'X_query': X_query,
-               'Y_query': Y_query}
+               'Y_query': Y_query,
+               'runtime': time_record}
 
     with open(results_file_name, 'wb') as file:
         pickle.dump(results, file)

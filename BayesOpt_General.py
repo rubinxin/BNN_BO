@@ -14,6 +14,7 @@ from models.mcdrop import MCDROPWarp
 from models.dngo import DNGOWrap
 from models.bohamiann import BOHAMIANNWarp
 from utilities.utilities import sample_fmin_Gumble
+import time
 
 class Bayes_opt():
     def __init__(self, func, bounds, noise_var):
@@ -80,7 +81,7 @@ class Bayes_opt():
         Y_query = np.copy(self.Y)
         X_opt  = np.copy(np.atleast_2d(self.arg_opt))
         Y_opt  = np.copy(np.atleast_2d(self.minY))
-
+        time_record = np.zeros([iterations,2])
         self.e = np.exp(1)
 
         #  Fit GP model to the data
@@ -92,8 +93,12 @@ class Bayes_opt():
 
             # optimise the acquisition function to get the next query point and evaluate at next query point
             # x_next, max_acqu_value = optimise_acqu_func(acqu_func=acqu_func, bounds = self.bounds,X_ob=self.X)
+            start_time = time.time()
             x_next_batch, acqu_value_batch = self.query_strategy.get_next(self.X, self.Y)
             max_acqu_value = np.max(acqu_value_batch)
+            t_opt_acq = time.time()- start_time
+            time_record[k,0] =  t_opt_acq
+
             y_next_batch = self.func(x_next_batch) + np.random.normal(0, np.sqrt(self.noise_var), (x_next_batch.shape[0],1))
 
             # augment the observation data
@@ -101,7 +106,11 @@ class Bayes_opt():
             self.Y = np.vstack((self.Y, y_next_batch))
 
             #  update GP model with new data
+            start_time2 = time.time()
             self.model._update_model(self.X, self.Y)
+            t_update_model = time.time()- start_time2
+            time_record[k,1] =  t_update_model
+
             self.minY = np.min(self.Y)
 
             #  resample the global minimum for MES
@@ -142,5 +151,5 @@ class Bayes_opt():
                             y_opt_pred=Y_opt[-1,:]
                             ))
 
-        return X_query, Y_query, X_opt, Y_opt
+        return X_query, Y_query, X_opt, Y_opt, time_record
 

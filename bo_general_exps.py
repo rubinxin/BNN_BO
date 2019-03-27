@@ -42,7 +42,7 @@ def BNN_BO_Exps(obj_func, model_type, bo_method, batch_option, batch_size,
                              batch_option=batch_option, batch_size=batch_size)
 
         # output of Bayesian optimisation:
-        X_query,Y_query,X_opt,Y_opt = bayes_opt.iteration_step(iterations=num_iter, seed=seed)
+        X_query,Y_query,X_opt,Y_opt, time_record = bayes_opt.iteration_step(iterations=num_iter, seed=seed)
         # X_query, Y_query - query points selected by BO;
         # X_opt, Yopt      - guesses of the global optimum/optimiser (= optimum point of GP posterior mean)
 
@@ -56,20 +56,31 @@ def BNN_BO_Exps(obj_func, model_type, bo_method, batch_option, batch_size,
         if not os.path.exists(saving_path):
             os.makedirs(saving_path)
 
-        X_query_file_name = saving_path + '/X_query' + model_type + bo_method + str(batch_size)
-        Y_query_file_name = saving_path + '/Y_query' + model_type + bo_method + str(batch_size)
-        X_opt_file_name = saving_path + '/X_opt' + model_type + bo_method + str(batch_size)
-        Y_opt_file_name = saving_path + '/Y_opt' + model_type + bo_method + str(batch_size)
+        results_file_name = saving_path + '/' + model_type + bo_method + str(batch_size)
 
-        with open(X_query_file_name, 'wb') as data_file:
-            pickle.dump(X_query_all_seeds, data_file)
-        with open(Y_query_file_name, 'wb') as data_file:
-            pickle.dump(Y_query_all_seeds, data_file)
+        results = {'X_opt': X_opt_all_seeds,
+                   'Y_opt': Y_opt_all_seeds,
+                   'X_query': X_query,
+                   'Y_query': Y_query,
+                   'runtime': time_record}
 
-        with open(X_opt_file_name, 'wb') as data_file:
-            pickle.dump(X_opt_all_seeds, data_file)
-        with open(Y_opt_file_name, 'wb') as data_file:
-            pickle.dump(Y_opt_all_seeds, data_file)
+        with open(results_file_name, 'wb') as file:
+            pickle.dump(results, file)
+
+        # X_query_file_name = saving_path + '/X_query' + model_type + bo_method + str(batch_size)
+        # Y_query_file_name = saving_path + '/Y_query' + model_type + bo_method + str(batch_size)
+        # X_opt_file_name = saving_path + '/X_opt' + model_type + bo_method + str(batch_size)
+        # Y_opt_file_name = saving_path + '/Y_opt' + model_type + bo_method + str(batch_size)
+        #
+        # with open(X_query_file_name, 'wb') as data_file:
+        #     pickle.dump(X_query_all_seeds, data_file)
+        # with open(Y_query_file_name, 'wb') as data_file:
+        #     pickle.dump(Y_query_all_seeds, data_file)
+        #
+        # with open(X_opt_file_name, 'wb') as data_file:
+        #     pickle.dump(X_opt_all_seeds, data_file)
+        # with open(Y_opt_file_name, 'wb') as data_file:
+        #     pickle.dump(Y_opt_all_seeds, data_file)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Run BayesOpt Experiments")
@@ -84,9 +95,9 @@ if __name__ == '__main__':
     parser.add_argument('-b', '--batch_size', help='BO Batch size. Default = 1',
                         default=1, type=int)
     parser.add_argument('-nitr', '--max_itr', help='Max BO iterations. Default = 40',
-                        default=40, type=int)
+                        default=100, type=int)
     parser.add_argument('-s', '--nseeds', help='Number of random initialisation. Default = 20',
-                        default=20, type=int)
+                        default=10, type=int)
 
     args = parser.parse_args()
     print(f"Got arguments: \n{args}")
