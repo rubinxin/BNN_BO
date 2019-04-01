@@ -1,20 +1,19 @@
-from pybnn.mcdrop import MCDROP
+from pybnn.mcconcretedrop import MCCONCRETEDROP
 from .base import BaseModel
 import numpy as np
 
-class MCDROPWarp(BaseModel):
+class MCCONCDROPWarp(BaseModel):
     """
-    A Wrapper for MC Dropout for a fully connected
+    A Wrapper for MC Concrete Dropout for a fully connected
     feed forward neural network..
     """
     def __init__(self, mini_batch_size=10,
-                 n_units=[50, 50, 50],
-                 dropout = 0.05, length_scale = 1e-2, T = 1000,
-                 normalize_input=True, normalize_output=True, rng=None):
-        # self.model = \
-        self.model = MCDROP(batch_size=mini_batch_size,
+                 n_units=[50, 50, 50], length_scale=1e-4,
+                 T = 1000, normalize_input=True, normalize_output=True, rng=None):
+
+        self.model = MCCONCRETEDROP(batch_size=mini_batch_size,
                  n_units_1=n_units[0], n_units_2=n_units[1], n_units_3=n_units[2],
-                 dropout_p = dropout, length_scale = length_scale, T = T,
+                 length_scale=length_scale,T = T,
                  normalize_input=normalize_input, normalize_output=normalize_output, rng=rng)
 
     def _create_model(self, X, Y):

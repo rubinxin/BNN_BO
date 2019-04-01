@@ -13,6 +13,7 @@ from models.gp import GPModel
 from models.mcdrop import MCDROPWarp
 from models.dngo import DNGOWrap
 from models.bohamiann import BOHAMIANNWarp
+from models.mcconcdrop import MCCONCDROPWarp
 from utilities.utilities import sample_fmin_Gumble
 import time
 
@@ -42,6 +43,7 @@ class Bayes_opt():
         self.arg_opt = np.atleast_2d(self.X[np.argmin(self.Y)])
         self.minY = np.min(self.Y)
 
+        mini_batch = 10
         # Specify the model
         if model_type == 'GP':
             self.kernel = kernel
@@ -52,10 +54,13 @@ class Bayes_opt():
                 self.model = GPModel(kernel=kernel, exact_feval=True, ARD=self.ARD)
 
         elif model_type == 'MCDROP':
-            self.model = MCDROPWarp(mini_batch_size=10,n_units=[50, 50, 50],
-                                    dropout = 0.05, tau = 1.0, T = 1000)
+            self.model = MCDROPWarp(mini_batch_size=mini_batch,n_units=n_hidden,
+                                    dropout = 0.05, length_scale = 1e-2, T = 100)
+        elif model_type == 'MCCONC':
+            self.model = MCCONCDROPWarp(mini_batch_size=mini_batch, n_units=n_hidden,
+                                        length_scale=1e-2, T = 100)
         elif model_type == 'DNGO':
-            self.model = DNGOWrap(mini_batch_size=10, n_units=n_hidden)
+            self.model = DNGOWrap(mini_batch_size=mini_batch, n_units=n_hidden)
 
         elif model_type == 'BOHAM':
             self.model = BOHAMIANNWarp(num_samples=6000, keep_every=50)

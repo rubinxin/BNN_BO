@@ -17,7 +17,7 @@ import pickle
 Test
 '''
 seed_size = 3
-model_type = 'GP'
+model_type = 'MCDROP'
 batch_size = 1
 bo_method = 'LCB'
 obj_func = 'rosenbrock-2d'
@@ -42,7 +42,7 @@ for j in range(seed_size):
 
     # run Bayesian optimisation:
     bayes_opt = Bayes_opt(func=f, bounds = x_bounds, noise_var=var_noise)
-    # model_type: GP or MCDROP or DNGO or BOHAM
+    # model_type: GP or MCDROP or MCCONC or DNGO or BOHAM
     bayes_opt.initialise(X_init=x_init, Y_init=y_init, model_type=model_type, batch_size=1, bo_method=bo_method)
 
     # output of Bayesian optimisation:
@@ -62,16 +62,6 @@ for j in range(seed_size):
     #
     # X_opt_file_name = saving_path + 'X_opt/' + model_type + bo_method + str(batch_size)
     # Y_opt_file_name = saving_path + '/Y_opt' + model_type + bo_method + str(batch_size)
-    #
     results_file_name = saving_path + '/' + model_type + bo_method + str(batch_size)
-
-    results = {'X_opt': X_opt_all_seeds,
-               'Y_opt': Y_opt_all_seeds,
-               'X_query': X_query,
-               'Y_query': Y_query,
-               'runtime': time_record}
-
-    with open(results_file_name, 'wb') as file:
-        pickle.dump(results, file)
 
 

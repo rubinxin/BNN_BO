@@ -86,8 +86,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Run BayesOpt Experiments")
     parser.add_argument('-f', '--func', help='Objective function',
                         default='hartmann-6d', type=str)
-    parser.add_argument('-m', '--model', help='Surrogate model: GP or MCDROP or DNGO or BOHAM',
-                        default='GP', type=str)
+    parser.add_argument('-m', '--model', help='Surrogate model: GP or MCDROP or MCCONC or DNGO or BOHAM',
+                        default='MCCONC', type=str)
     parser.add_argument('-acq', '--acq_func', help='Acquisition function: LCB, EI, MES',
                         default='LCB', type=str)
     parser.add_argument('-bm', '--batch_opt', help='Batch option: CL, KB',
