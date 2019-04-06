@@ -8,13 +8,13 @@ class BOHAMIANNWarp(BaseModel):
     feed forward neural network..
     """
     def __init__(self, num_samples=6000, keep_every=50, lr=1e-2,
-                 normalize_input: bool = True, normalize_output: bool = True, verbose=True):
+                 normalize_input: bool = True, normalize_output: bool = True, verbose=True, seed=42):
 
         self.verbose = verbose
         self.num_samples = num_samples
         self.keep_every = keep_every
         self.lr = lr
-        self.model = Bohamiann(normalize_input=normalize_input, normalize_output=normalize_output)
+        self.model = Bohamiann(normalize_input=normalize_input, normalize_output=normalize_output, seed=seed)
 
     def _create_model(self, X, Y):
         Y = Y.flatten()

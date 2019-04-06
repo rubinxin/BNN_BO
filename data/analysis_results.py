@@ -14,13 +14,15 @@ import pickle
 Test
 '''
 
+obj_func = 'rosenbrock-2d'
 # obj_func = 'egg-2d'
 # obj_func = 'hartmann-6d'
-obj_func = 'ackley-10d'
+# obj_func = 'ackley-10d'
 
 batch_size = 1
 bo_method = 'LCB'
-models_all = ['GP','DNGO','MCDROP','BOHAM']
+# models_all = ['GP','DNGO','MCDROP','BOHAM']
+models_all = ['DNGO','MCDROP','BOHAM']
 indx = range(100)
 
 plt.figure(figsize=(9,5))

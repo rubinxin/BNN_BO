@@ -39,10 +39,10 @@ def BNN_BO_Exps(obj_func, model_type, bo_method, batch_option, batch_size,
         bayes_opt = Bayes_opt(func=f, bounds = x_bounds, noise_var=var_noise)
         # model_type: GP or MCDROP or DNGO or BOHAM
         bayes_opt.initialise(X_init=x_init, Y_init=y_init, model_type=model_type, bo_method=bo_method,
-                             batch_option=batch_option, batch_size=batch_size)
+                             batch_option=batch_option, batch_size=batch_size, seed=seed)
 
         # output of Bayesian optimisation:
-        X_query,Y_query,X_opt,Y_opt, time_record = bayes_opt.iteration_step(iterations=num_iter, seed=seed)
+        X_query,Y_query,X_opt,Y_opt, time_record = bayes_opt.iteration_step(iterations=num_iter)
         # X_query, Y_query - query points selected by BO;
         # X_opt, Yopt      - guesses of the global optimum/optimiser (= optimum point of GP posterior mean)
 
@@ -67,27 +67,12 @@ def BNN_BO_Exps(obj_func, model_type, bo_method, batch_option, batch_size,
         with open(results_file_name, 'wb') as file:
             pickle.dump(results, file)
 
-        # X_query_file_name = saving_path + '/X_query' + model_type + bo_method + str(batch_size)
-        # Y_query_file_name = saving_path + '/Y_query' + model_type + bo_method + str(batch_size)
-        # X_opt_file_name = saving_path + '/X_opt' + model_type + bo_method + str(batch_size)
-        # Y_opt_file_name = saving_path + '/Y_opt' + model_type + bo_method + str(batch_size)
-        #
-        # with open(X_query_file_name, 'wb') as data_file:
-        #     pickle.dump(X_query_all_seeds, data_file)
-        # with open(Y_query_file_name, 'wb') as data_file:
-        #     pickle.dump(Y_query_all_seeds, data_file)
-        #
-        # with open(X_opt_file_name, 'wb') as data_file:
-        #     pickle.dump(X_opt_all_seeds, data_file)
-        # with open(Y_opt_file_name, 'wb') as data_file:
-        #     pickle.dump(Y_opt_all_seeds, data_file)
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Run BayesOpt Experiments")
     parser.add_argument('-f', '--func', help='Objective function',
                         default='hartmann-6d', type=str)
-    parser.add_argument('-m', '--model', help='Surrogate model: GP or MCDROP or MCCONC or DNGO or BOHAM',
-                        default='MCCONC', type=str)
+    parser.add_argument('-m', '--model', help='Surrogate model: GP or MCDROP or MCCONC or DNGO or BOHAM or LCBNN',
+                        default='LCBNN', type=str)
     parser.add_argument('-acq', '--acq_func', help='Acquisition function: LCB, EI, MES',
                         default='LCB', type=str)
     parser.add_argument('-bm', '--batch_opt', help='Batch option: CL, KB',

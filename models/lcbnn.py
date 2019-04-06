@@ -1,25 +1,25 @@
-from pybnn.dngo import DNGO
+from pybnn.lcbnn import LCBNN
 from .base import BaseModel
 import numpy as np
-class DNGOWrap(BaseModel):
+
+class LCBNNWarp(BaseModel):
     """
-    A Wrapper for MC Dropout for a fully connected
-    feed forward neural network..
+    A Wrapper for Loss-Calibrated BNN.
     """
     def __init__(self, mini_batch_size=10,
                  n_units=[50, 50, 50],
-                 alpha=1.0, beta=1000, prior=None, do_mcmc=True,
-                 n_hypers=20, chain_length=2000, burnin_steps=2000,
+                 dropout = 0.05, length_scale = 1e-2, T = 1000, util_type='dis',
                  normalize_input=True, normalize_output=True, seed=42):
-
-        self.model = DNGO(batch_size=mini_batch_size, n_units_1=n_units[0], n_units_2=n_units[1],
-                          n_units_3=n_units[2],alpha=alpha, beta=beta, prior=prior, do_mcmc=do_mcmc,
-                 n_hypers=n_hypers, chain_length=chain_length, burnin_steps=burnin_steps,
-                 normalize_input=normalize_input, normalize_output=normalize_output, rng=seed)
+        # self.model = \
+        self.model = LCBNN(batch_size=mini_batch_size,
+                 n_units_1=n_units[0], n_units_2=n_units[1], n_units_3=n_units[2],
+                 dropout_p = dropout, length_scale = length_scale, T = T,
+                 normalize_input=normalize_input, normalize_output=normalize_output, rng=seed,
+                 weights=None, util_type=util_type)
 
     def _create_model(self, X, Y):
         Y = Y.flatten()
-        self.model.train(X, Y, do_optimize=True)
+        self.model.train(X, Y)
 
     def _update_model(self,  X_all, Y_all):
         """
@@ -30,7 +30,7 @@ class DNGOWrap(BaseModel):
         if self.model is None:
             self._create_model(X_all, Y_all)
         else:
-            self.model.train(X_all, Y_all, do_optimize=True)
+            self.model.train(X_all, Y_all)
 
     def predict(self, X):
         """
@@ -40,7 +40,6 @@ class DNGOWrap(BaseModel):
         m, v = self.model.predict(X)
         # m and v have shape (N,)
         s = np.sqrt(v)
-
         return m[:,None], s[:,None]
 
     def predict_withGradients(self, X):

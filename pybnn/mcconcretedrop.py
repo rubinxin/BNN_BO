@@ -142,15 +142,17 @@ class MCCONCRETEDROP(BaseModel):
             Zero mean unit variance normalization of the output values
         normalize_input : bool
             Zero mean unit variance normalization of the input values
-        rng: np.random.RandomState
-            Random number generator
+        rng: random seed
+
         """
 
         if rng is None:
             self.rng = np.random.RandomState(np.random.randint(0, 10000))
         else:
-            self.rng = rng
+            self.rng = np.random.RandomState(rng)
 
+        self.seed = rng
+        torch.manual_seed(self.seed)
         self.X = None
         self.y = None
         self.network = None

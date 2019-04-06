@@ -96,7 +96,10 @@ class DNGO(BaseModel):
         if rng is None:
             self.rng = np.random.RandomState(np.random.randint(0, 10000))
         else:
-            self.rng = rng
+            self.rng = np.random.RandomState(rng)
+
+        self.seed = rng
+        torch.manual_seed(self.seed)
 
         self.X = None
         self.y = None
@@ -151,6 +154,7 @@ class DNGO(BaseModel):
             the default hyperparameters are used.
 
         """
+
         start_time = time.time()
 
         # Normalize inputs
@@ -375,6 +379,7 @@ class DNGO(BaseModel):
             predictive variance
 
         """
+
         # Normalize inputs
         if self.normalize_input:
             X_, _, _ = zero_mean_unit_var_normalization(X_test, self.X_mean, self.X_std)

@@ -3,13 +3,15 @@ The code package implemented the surrogate models:
   * GP 
   * DNGO (NN + Bayesian Linear Regression)
   * MC Dropout
+  * Concrete Dropout
   * BOHAMIAN (HMC-based BNN) 
+  * 
 
 
 ## Running a BO experiment
 Run Bayesian optimisation experiments: `python bo_general_exps.py` followed by the following flags:
   * `-f` Objective function: default=`'egg-2d'`
-  * `-m` Surrogate model: `'GP'`(default), `'MCDROP'`,`MCCONC`, `'DNGO'` or `'BOHAM'`
+  * `-m` Surrogate model: `'GP'`(default), `'MCDROP'`,`MCCONC`, `'DNGO'` or `'BOHAM'` or `'LCBNN'`
   * `-acq` Acquisition function: `'LCB'`(default) or `'EI'`
   * `-bm` Batch option: `'CL'`(default) or `'KB'`
   * `-b` BO Batch size: default = `1`                    

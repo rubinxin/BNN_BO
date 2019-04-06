@@ -29,7 +29,7 @@ class GPModel(BaseModel):
 
     def __init__(self, kernel=None, noise_var=None, exact_feval=False, optimizer='bfgs',
                  max_iters=1000, optimize_restarts=5,sparse = False, num_inducing = 10,
-                 verbose=False, ARD=False):
+                 verbose=False, ARD=False, seed=42):
         self.kernel = kernel
         self.noise_var = noise_var
         self.exact_feval = exact_feval
@@ -41,6 +41,8 @@ class GPModel(BaseModel):
         self.num_inducing = num_inducing
         self.model = None
         self.ARD = ARD
+        self.seed = seed
+        np.random.rand(self.seed)
 
     def _create_model(self, X, Y):
         """

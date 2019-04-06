@@ -69,7 +69,8 @@ class Bohamiann(BaseModel):
                  metrics=(nn.MSELoss,),
                  likelihood_function=nll,
                  print_every_n_steps=100,
-                 gpu=False) -> None:
+                 gpu=False,
+                 seed = 42) -> None:
         """
 
         Bayesian Neural Networks use Bayesian methods to estimate the posterior
@@ -108,6 +109,9 @@ class Bohamiann(BaseModel):
         self.sampler = None
         self.gpu = gpu #TODO not working for gpu
         self.device = torch.device("cuda: 0" if torch.cuda.is_available() else "cpu")
+        self.seed = seed
+        np.random.rand(self.seed)
+        torch.manual_seed(self.seed)
 
     @property
     def network_weights(self) -> tuple:
@@ -166,6 +170,7 @@ class Bohamiann(BaseModel):
         :param continue_training: defines whether we want to continue from the last training run
         :param verbose: verbose output
         """
+
         logging.debug("Training started.")
         start_time = time.time()
 
@@ -422,6 +427,7 @@ class Bohamiann(BaseModel):
         :param return_individual_predictions: if True also the predictions of the individual models are returned
         :return: mean and variance
         """
+
         x_test_ = np.asarray(x_test)
 
         if self.do_normalize_input:
