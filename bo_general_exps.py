@@ -17,7 +17,7 @@ import pickle
 Run Bayesian Optimisation Experiments 
 '''
 def BNN_BO_Exps(obj_func, model_type, bo_method, batch_option, batch_size,
-                num_iter=40, seed_size=20):
+                num_iter=40, seed_size=20, util_type='se_y'):
 
     #  Specify the objective function and parameters (noise variance, input dimension, initial observation
     f, x_bounds, _, true_fmin = get_function(obj_func)
@@ -39,7 +39,7 @@ def BNN_BO_Exps(obj_func, model_type, bo_method, batch_option, batch_size,
         bayes_opt = Bayes_opt(func=f, bounds = x_bounds, noise_var=var_noise)
         # model_type: GP or MCDROP or DNGO or BOHAM
         bayes_opt.initialise(X_init=x_init, Y_init=y_init, model_type=model_type, bo_method=bo_method,
-                             batch_option=batch_option, batch_size=batch_size, seed=seed)
+                             batch_option=batch_option, batch_size=batch_size, seed=seed,  util_type=util_type)
 
         # output of Bayesian optimisation:
         X_query,Y_query,X_opt,Y_opt, time_record = bayes_opt.iteration_step(iterations=num_iter)
@@ -56,7 +56,10 @@ def BNN_BO_Exps(obj_func, model_type, bo_method, batch_option, batch_size,
         if not os.path.exists(saving_path):
             os.makedirs(saving_path)
 
-        results_file_name = saving_path + '/' + model_type + bo_method + str(batch_size)
+        if model_type == 'LCBNN':
+            results_file_name = saving_path + '/' + model_type + bo_method + str(batch_size) + util_type
+        else:
+            results_file_name = saving_path + '/' + model_type + bo_method + str(batch_size)
 
         results = {'X_opt': X_opt_all_seeds,
                    'Y_opt': Y_opt_all_seeds,
@@ -80,9 +83,11 @@ if __name__ == '__main__':
     parser.add_argument('-b', '--batch_size', help='BO Batch size. Default = 1',
                         default=1, type=int)
     parser.add_argument('-nitr', '--max_itr', help='Max BO iterations. Default = 40',
-                        default=100, type=int)
+                        default=10, type=int)
     parser.add_argument('-s', '--nseeds', help='Number of random initialisation. Default = 20',
                         default=10, type=int)
+    parser.add_argument('-uo', '--util_opt', help='Utility function type for LCBNN: se_yclip, se_y ,Default=se_y',
+                        default='se_yclip', type=str)
 
     args = parser.parse_args()
     print(f"Got arguments: \n{args}")
@@ -93,6 +98,7 @@ if __name__ == '__main__':
     batch_n = args.batch_size
     n_itrs = args.max_itr
     n_seeds = args.nseeds
+    util_opt = args.util_opt
 
     BNN_BO_Exps(obj_func=obj_func, model_type=model, bo_method=acq_func, batch_option=batch_opt, batch_size=batch_n,
-                num_iter=n_itrs, seed_size=n_seeds)
+                num_iter=n_itrs, seed_size=n_seeds, util_type = util_opt)

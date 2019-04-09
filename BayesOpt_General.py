@@ -25,7 +25,7 @@ class Bayes_opt():
         self.noise_var = noise_var
 
     def initialise(self, X_init=None, Y_init=None, kernel=None, n_fmin_samples=1, model_type='GP',
-                   n_hidden=[50, 50, 50], bo_method='LCB', batch_option='CL',  batch_size=1, seed=42):
+                   n_hidden=[50, 50, 50], bo_method='LCB', batch_option='CL', batch_size=1, seed=42, util_type='se_y'):
         assert X_init.ndim == 2, "X_init has to be 2D array"
         assert Y_init.ndim == 2, "Y_init has to be 2D array"
         self.X_init = X_init
@@ -68,7 +68,7 @@ class Bayes_opt():
                                         length_scale=l_s, T = T, seed=seed)
         elif model_type == 'LCBNN':
             self.model = LCBNNWarp(mini_batch_size=mini_batch, n_units=n_hidden,
-                                   dropout=0.05,length_scale=l_s, T=T, util_type='dis', seed=seed)
+                                   dropout=0.05,length_scale=l_s, T=T, util_type=util_type, seed=seed)
 
         elif model_type == 'DNGO':
             self.model = DNGOWrap(mini_batch_size=mini_batch, n_units=n_hidden, seed=seed)

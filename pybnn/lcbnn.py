@@ -11,7 +11,7 @@ from pybnn.base_model import BaseModel
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 
 
-def utility(util_type='dis', Y_train=0):
+def utility(util_type='se_y', Y_train=0):
     '''Inputs:
     y_true: true values (N,D)
     y_pred: predicted values (N,D)
@@ -19,41 +19,35 @@ def utility(util_type='dis', Y_train=0):
     y_ob: training data
     '''
 
-    def util(y_true, y_pred):
+    def util(y_pred_samples, H_x):
 
-        if util_type == 'dis':
-            u_high = - (y_true - y_pred) ** 2
-        elif util_type == 'dis_ytrue':
-            u_high = - (y_true - y_pred) ** 2 + y_true
-        elif util_type == 'dis_ypred':
-            u_high = - (y_true - y_pred) ** 2 + y_pred
-        elif util_type == 'dis_ytrue_ypred':
-            u_high = - (y_true - y_pred) ** 2 + y_pred + y_true
+        if util_type == 'se_y':
+            u = - (y_pred_samples - H_x) ** 2 + y_pred_samples
+            cond_gain_unscaled = torch.mean(u, 0)
+            cond_gain = 1./(torch.exp(-cond_gain_unscaled)+1) + 1e-8
 
-        # u_low = torch.zeros_like(y_true)
-        # U2 = torch.where(y_true > np.mean(Y_train), u_high, u_low).mean()
-        # # U = torch.exp(torch.where(y_true > np.mean(Y_train), u_high, u_low))
-        # U = torch.where(y_true > np.mean(Y_train), u_high, u_low)
-        # U = torch.ones_like(y_true)
-        # U = torch.exp(u_high)
-        u_unscaled = u_high
-        U = 1./(torch.exp(-u_unscaled)+1)
-        U[U == 0.5] = 0
+        elif util_type == 'se_yclip':
+            u_unscaled = - (y_pred_samples - H_x) ** 2
+            u_scaled = 1 + torch.exp(-u_unscaled)
+            u_clip = torch.zeros_like(y_pred_samples)
+            u = torch.where(y_pred_samples > np.mean(Y_train), u_scaled, u_clip)
+            cond_gain = torch.mean(u, 0) + 1e-8
 
-        return torch.exp(U)
+        return cond_gain
 
     return util
 
 
-def cal_loss(y_true, y_pred, util, H_x):
-    a = 0.5
+def cal_loss(y_true, y_pred, util, H_x, y_pred_samples):
+    a = 1.0
     loss = nn.functional.mse_loss(y_pred, y_true)
-    n_high = np.sum((y_true>0).numpy())
-    utility_value = a * torch.log(util(y_true, H_x.detach())).mean()
-    # utility_value = util(y_true, H_x.detach()).mean()
-    # utility_value = util(H_x.detach(), y_pred).mean()
+    log_condi_gain = torch.log(util(y_pred_samples.detach(), H_x.detach()))
+
+    utility_value = a * log_condi_gain.mean()
     calibrated_loss = loss - utility_value
+
     return calibrated_loss
+
 
 
 def optimal_h(y_pred_samples, util):
@@ -102,7 +96,7 @@ class LCBNN(BaseModel):
                  adapt_epoch=5000, n_units_1=50, n_units_2=50, n_units_3=50,
                  dropout_p=0.05, length_scale = 1e-1, weight_decay = 1e-6, T = 100,
                  normalize_input=True, normalize_output=True, rng=None, weights=None,
-                 loss_cal=True, lc_burn=0, util_type='dis',gpu=True):
+                 loss_cal=True, lc_burn=1, util_type='se_y',gpu=True):
         """
         This module performs MC Dropout for a fully connected
         feed forward neural network.
@@ -258,8 +252,6 @@ class LCBNN(BaseModel):
 
                 if epoch == 0 and self.loss_cal and self.lc_burn == 0:
                     h_x  = targets
-                else:
-                    h_x = torch.where(targets > np.mean(self.y), y_pred_mean, targets)
 
                 optimizer.zero_grad()
                 output = network(inputs)
@@ -267,10 +259,10 @@ class LCBNN(BaseModel):
                     loss = torch.nn.functional.mse_loss(output, targets)
 
                 if self.loss_cal and epoch >= self.lc_burn:
-                    loss = cal_loss(targets, output, util, h_x)
+                    loss = cal_loss(targets, output, util, h_x, y_pred_samples)
                 else:
-                    criterion = nn.functional.mse_loss(weight=self.weights)
-                    loss = criterion(output, targets)
+                    # criterion = nn.functional.mse_loss(weight=self.weights)
+                    loss =  torch.nn.functional.mse_loss(output, targets)
 
                     #                 loss = criterion(output, targets)
                 #                 loss = torch.nn.functional.mse_loss(output, targets)
@@ -281,11 +273,10 @@ class LCBNN(BaseModel):
                 train_batches += 1
 
             if self.loss_cal and epoch >= (self.lc_burn - 1):
-                y_pred_samples = [network(torch.Tensor(inputs)) for _ in range(self.T)]
+                y_pred_samples = [network(inputs) for _ in range(self.T)]
                 y_pred_samples = torch.stack(y_pred_samples)
-                # h_x = optimal_h(y_pred_samples.detach(), util)[0]
                 y_pred_mean = torch.mean(y_pred_samples, 0)
-                # h_x = targets
+                h_x = y_pred_mean
 
             lc[epoch] = train_err / train_batches
             logging.debug("Epoch {} of {}".format(epoch + 1, self.num_epochs))

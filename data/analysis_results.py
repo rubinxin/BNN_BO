@@ -14,16 +14,17 @@ import pickle
 Test
 '''
 
-obj_func = 'rosenbrock-2d'
+# obj_func = 'rosenbrock-2d'
 # obj_func = 'egg-2d'
+obj_func = 'branin-2d'
 # obj_func = 'hartmann-6d'
 # obj_func = 'ackley-10d'
 
 batch_size = 1
 bo_method = 'LCB'
 # models_all = ['GP','DNGO','MCDROP','BOHAM']
-models_all = ['DNGO','MCDROP','BOHAM']
-indx = range(100)
+models_all = ['DNGO','MCDROP','BOHAM','LCBNN']
+indx = range(60)
 
 plt.figure(figsize=(9,5))
 plt.rc('xtick', labelsize=18)
@@ -37,6 +38,7 @@ for model_type in models_all:
         results = pickle.load(file)
 
     Y_opt_all_seeds = results['Y_opt']
+    print(model_type + f'seeds={len(Y_opt_all_seeds)}')
     mean_bestVals = np.mean(Y_opt_all_seeds, 0)
     err_bestVals = np.std(Y_opt_all_seeds, 0)/len(Y_opt_all_seeds)
     plt.errorbar(indx, mean_bestVals[indx], err_bestVals[indx], label=model_type)

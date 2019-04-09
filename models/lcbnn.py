@@ -8,7 +8,7 @@ class LCBNNWarp(BaseModel):
     """
     def __init__(self, mini_batch_size=10,
                  n_units=[50, 50, 50],
-                 dropout = 0.05, length_scale = 1e-2, T = 1000, util_type='dis',
+                 dropout = 0.05, length_scale = 1e-2, T = 1000, util_type='se_y',
                  normalize_input=True, normalize_output=True, seed=42):
         # self.model = \
         self.model = LCBNN(batch_size=mini_batch_size,

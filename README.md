@@ -17,6 +17,8 @@ Run Bayesian optimisation experiments: `python bo_general_exps.py` followed by t
   * `-b` BO Batch size: default = `1`                    
   * `-nitr` Max BO iterations: default = `40`
   * `-s` Number of random initialisation: default = `20`
+  * `-uo` Utility function type for LCBNN: `'se_yclip'` or `'se_y'` 
+ 
   E.g. `python bo_general_exps.py -f='egg-2d' -m='GP' -acq='LCB' -bm='CL' -b=1 -nitr=60 -s=10`
 
 ## Requirement
