@@ -6,13 +6,14 @@ class DNGOWrap(BaseModel):
     A Wrapper for MC Dropout for a fully connected
     feed forward neural network..
     """
-    def __init__(self, mini_batch_size=10,
+    def __init__(self, mini_batch_size=10, num_epochs=500,
                  n_units=[50, 50, 50],
                  alpha=1.0, beta=1000, prior=None, do_mcmc=True,
                  n_hypers=20, chain_length=2000, burnin_steps=2000,
                  normalize_input=True, normalize_output=True, seed=42):
 
-        self.model = DNGO(batch_size=mini_batch_size, n_units_1=n_units[0], n_units_2=n_units[1],
+        self.model = DNGO(batch_size=mini_batch_size, num_epochs=num_epochs,
+                          n_units_1=n_units[0], n_units_2=n_units[1],
                           n_units_3=n_units[2],alpha=alpha, beta=beta, prior=prior, do_mcmc=do_mcmc,
                  n_hypers=n_hypers, chain_length=chain_length, burnin_steps=burnin_steps,
                  normalize_input=normalize_input, normalize_output=normalize_output, rng=seed)

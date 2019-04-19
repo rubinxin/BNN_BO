@@ -22,16 +22,16 @@ def utility(util_type='se_y', Y_train=0):
     def util(y_pred_samples, H_x):
 
         if util_type == 'se_y':
-            u = - (y_pred_samples - H_x) ** 2 + y_pred_samples
+            u = - (y_pred_samples - H_x) ** 2 - y_pred_samples
             cond_gain_unscaled = torch.mean(u, 0)
-            cond_gain = 1./(torch.exp(-cond_gain_unscaled)+1) + 1e-8
+            cond_gain = torch.exp(cond_gain_unscaled) + 1e-8
 
         elif util_type == 'se_yclip':
             u_unscaled = - (y_pred_samples - H_x) ** 2
-            u_scaled = 1 + torch.exp(-u_unscaled)
-            u_clip = torch.zeros_like(y_pred_samples)
-            u = torch.where(y_pred_samples > np.mean(Y_train), u_scaled, u_clip)
-            cond_gain = torch.mean(u, 0) + 1e-8
+            u_scaled = 1 + torch.exp(u_unscaled)
+            u_clip = torch.ones_like(y_pred_samples)
+            u = torch.where(y_pred_samples < np.mean(Y_train), u_scaled, u_clip)
+            cond_gain = torch.mean(u, 0)
 
         return cond_gain
 
@@ -213,15 +213,20 @@ class LCBNN(BaseModel):
             network = Net(n_inputs=features, dropout_p=self.dropout_p, decay= self.decay,
                           n_units=[self.n_units_1, self.n_units_2, self.n_units_3])
 
+            # optimizer = optim.Adam(network.parameters(),
+            #                        lr=self.init_learning_rate,
+            #                        weight_decay=self.decay)
             optimizer = optim.Adam(network.parameters(),
-                                   lr=self.init_learning_rate,
-                                   weight_decay=self.decay)
+                                   lr=self.init_learning_rate)
 
         else:
             network = self.model
+            # optimizer = optim.Adam(network.parameters(),
+            #                        lr=self.init_learning_rate,
+            #                        weight_decay=self.decay)
             optimizer = optim.Adam(network.parameters(),
-                                   lr=self.init_learning_rate,
-                                   weight_decay=self.decay)
+                                   lr=self.init_learning_rate)
+
 
         if self.gpu:
             network = network.to(self.device)

@@ -48,8 +48,8 @@ class Bayes_opt():
         # --- Param for NN models --- #
         mini_batch = 10
         T = 200
-        l_s = 1e-2
-
+        l_s = 1e-1
+        n_epochs = 500
 
         # Specify the model
         if model_type == 'GP':
@@ -61,17 +61,17 @@ class Bayes_opt():
                 self.model = GPModel(kernel=kernel, exact_feval=True, ARD=self.ARD, seed=seed)
 
         elif model_type == 'MCDROP':
-            self.model = MCDROPWarp(mini_batch_size=mini_batch,n_units=n_hidden,
+            self.model = MCDROPWarp(mini_batch_size=mini_batch, num_epochs= n_epochs, n_units=n_hidden,
                                     dropout = 0.05, length_scale = l_s, T = T, seed=seed)
         elif model_type == 'MCCONC':
             self.model = MCCONCDROPWarp(mini_batch_size=mini_batch, n_units=n_hidden,
                                         length_scale=l_s, T = T, seed=seed)
         elif model_type == 'LCBNN':
-            self.model = LCBNNWarp(mini_batch_size=mini_batch, n_units=n_hidden,
+            self.model = LCBNNWarp(mini_batch_size=mini_batch,num_epochs= n_epochs, n_units=n_hidden,
                                    dropout=0.05,length_scale=l_s, T=T, util_type=util_type, seed=seed)
 
         elif model_type == 'DNGO':
-            self.model = DNGOWrap(mini_batch_size=mini_batch, n_units=n_hidden, seed=seed)
+            self.model = DNGOWrap(mini_batch_size=mini_batch,num_epochs= n_epochs, n_units=n_hidden, seed=seed)
 
         elif model_type == 'BOHAM':
             self.model = BOHAMIANNWarp(num_samples=6000, keep_every=50, seed=seed)

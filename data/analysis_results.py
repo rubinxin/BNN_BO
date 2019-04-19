@@ -16,17 +16,20 @@ Test
 
 # obj_func = 'rosenbrock-2d'
 # obj_func = 'egg-2d'
-obj_func = 'branin-2d'
+# obj_func = 'branin-2d'
 # obj_func = 'hartmann-6d'
-# obj_func = 'ackley-10d'
+obj_func = 'ackley-10d'
+# obj_func = 'michalewicz-10d'
 
 batch_size = 1
 bo_method = 'LCB'
-# models_all = ['GP','DNGO','MCDROP','BOHAM']
-models_all = ['DNGO','MCDROP','BOHAM','LCBNN']
+models_all = ['DNGO','MCDROP','BOHAM','LCBNNse_y','LCBNNse_yclip']
+# models_all = ['DNGO','MCDROP','BOHAM','LCBNNse_y']
+#
+# models_all = ['GP','MCDROP','LCBNNse_y','LCBNNse_yclip']
 indx = range(60)
 
-plt.figure(figsize=(9,5))
+f = plt.figure(figsize=(4,4))
 plt.rc('xtick', labelsize=18)
 plt.rc('ytick', labelsize=18)
 
@@ -46,6 +49,9 @@ for model_type in models_all:
 plt.xlabel("Iteration", fontsize=12)
 plt.ylabel("Best Value so far", fontsize=12)
 plt.title(obj_func, fontsize=12)
-plt.legend(prop={'size': 12})
+plt.legend(prop={'size': 12},loc='lower left')
 plt.show()
+# plt.show()
+results_file_name
+f.savefig(obj_func + '/' + obj_func + bo_method + str(batch_size) +  ".pdf", bbox_inches='tight')
 

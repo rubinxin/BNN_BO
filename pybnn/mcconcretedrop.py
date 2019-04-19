@@ -323,13 +323,13 @@ class MCCONCRETEDROP(BaseModel):
             means = torch.stack([tup[0] for tup in MC_samples]).view(T, X_.shape[0]).data.numpy()
             logvar = torch.stack([tup[1] for tup in MC_samples]).view(T, X_.shape[0]).data.numpy()
 
+        logvar = np.mean(logvar,0)
         aleatoric_uncertainty = np.exp(logvar).mean(0)
-        epistemic_uncertainty = np.var(means, 0).mean(0)
+        # epistemic_uncertainty = np.var(means, 0).mean(0)
 
         MC_pred_mean = np.mean(means, 0)  # N x 1
-
-        Second_moment = np.mean(means ** 2, 0) # N x 1
-        MC_pred_var = Second_moment + epistemic_uncertainty - (MC_pred_mean ** 2)
+        means_var  = np.var(means, 0)
+        MC_pred_var = means_var + aleatoric_uncertainty
 
         m = MC_pred_mean.flatten()
 

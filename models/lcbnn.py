@@ -6,12 +6,12 @@ class LCBNNWarp(BaseModel):
     """
     A Wrapper for Loss-Calibrated BNN.
     """
-    def __init__(self, mini_batch_size=10,
+    def __init__(self, mini_batch_size=10,num_epochs=500,
                  n_units=[50, 50, 50],
                  dropout = 0.05, length_scale = 1e-2, T = 1000, util_type='se_y',
                  normalize_input=True, normalize_output=True, seed=42):
         # self.model = \
-        self.model = LCBNN(batch_size=mini_batch_size,
+        self.model = LCBNN(batch_size=mini_batch_size,num_epochs=num_epochs,
                  n_units_1=n_units[0], n_units_2=n_units[1], n_units_3=n_units[2],
                  dropout_p = dropout, length_scale = length_scale, T = T,
                  normalize_input=normalize_input, normalize_output=normalize_output, rng=seed,

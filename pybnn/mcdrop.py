@@ -156,9 +156,11 @@ class MCDROP(BaseModel):
 
         if self.gpu:
             network = network.to(self.device)
-
+        #
+        # optimizer = optim.Adam(network.parameters(),
+        #                        lr=self.init_learning_rate, weight_decay=network.decay)
         optimizer = optim.Adam(network.parameters(),
-                               lr=self.init_learning_rate, weight_decay=network.decay)
+                               lr=self.init_learning_rate)
 
         # Start training
         lc = np.zeros([self.num_epochs])
