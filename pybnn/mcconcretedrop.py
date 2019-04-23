@@ -145,7 +145,6 @@ class MCCONCRETEDROP(BaseModel):
         rng: random seed
 
         """
-
         if rng is None:
             self.rng = np.random.RandomState(np.random.randint(0, 10000))
         else:
@@ -153,6 +152,7 @@ class MCCONCRETEDROP(BaseModel):
 
         self.seed = rng
         torch.manual_seed(self.seed)
+
         self.X = None
         self.y = None
         self.network = None
@@ -249,6 +249,7 @@ class MCCONCRETEDROP(BaseModel):
 
                 optimizer.zero_grad()
                 output, log_var, regularization = network(inputs)
+
                 loss = torch.nn.functional.mse_loss(output, targets) + regularization
 
                 loss.backward()
@@ -266,6 +267,13 @@ class MCCONCRETEDROP(BaseModel):
             logging.debug("Training loss:\t\t{:.5g}".format(train_err / train_batches))
 
         self.model = network
+        # Estimate aleatoric uncertainty
+        X_train_tensor = Variable(torch.FloatTensor(self.X))
+        if self.gpu:
+            X_train_tensor = X_train_tensor.to(self.device)
+        y_train_mc_samples = [network(X_train_tensor) for _ in range(self.T)]
+        y_train_predict_samples = torch.stack([tup[0] for tup in y_train_mc_samples]).view(self.T, N).cpu().data.numpy()
+        self.aleatoric_uncertainty = np.mean(np.mean(y_train_predict_samples - self.y.flatten(),0))
 
     def iterate_minibatches(self, inputs, targets, batchsize, shuffle=False):
         assert inputs.shape[0] == targets.shape[0], \
@@ -316,17 +324,17 @@ class MCCONCRETEDROP(BaseModel):
             X_tensor = Variable(torch.FloatTensor(X_)).to(self.device)
             MC_samples = [model(X_tensor) for _ in range(T)]
             means = torch.stack([tup[0] for tup in MC_samples]).view(T, X_.shape[0]).cpu().data.numpy()
-            logvar = torch.stack([tup[1] for tup in MC_samples]).view(T, X_.shape[0]).cpu().data.numpy()
+            # logvar = torch.stack([tup[1] for tup in MC_samples]).view(T, X_.shape[0]).cpu().data.numpy()
         else:
             model.cpu()
             MC_samples = [model(Variable(torch.FloatTensor(X_))) for _ in range(T)]
             means = torch.stack([tup[0] for tup in MC_samples]).view(T, X_.shape[0]).data.numpy()
-            logvar = torch.stack([tup[1] for tup in MC_samples]).view(T, X_.shape[0]).data.numpy()
+            # logvar = torch.stack([tup[1] for tup in MC_samples]).view(T, X_.shape[0]).data.numpy()
 
-        logvar = np.mean(logvar,0)
-        aleatoric_uncertainty = np.exp(logvar).mean(0)
+        # logvar = np.mean(logvar,0)
+        # aleatoric_uncertainty = np.exp(logvar).mean(0)
         # epistemic_uncertainty = np.var(means, 0).mean(0)
-
+        aleatoric_uncertainty = self.aleatoric_uncertainty
         MC_pred_mean = np.mean(means, 0)  # N x 1
         means_var  = np.var(means, 0)
         MC_pred_var = means_var + aleatoric_uncertainty
