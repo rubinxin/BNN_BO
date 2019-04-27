@@ -14,6 +14,7 @@ from models.mcdrop import MCDROPWarp
 from models.dngo import DNGOWrap
 from models.bohamiann import BOHAMIANNWarp
 from models.lcbnn import LCBNNWarp
+from models.lccd import LCCDWarp
 from models.mcconcdrop import MCCONCDROPWarp
 from utilities.utilities import sample_fmin_Gumble
 import time
@@ -49,7 +50,7 @@ class Bayes_opt():
         mini_batch = 10
         T = 200
         l_s = 1e-1
-        n_epochs = 500
+        n_epochs = 1000
 
         # Specify the model
         if model_type == 'GP':
@@ -64,11 +65,15 @@ class Bayes_opt():
             self.model = MCDROPWarp(mini_batch_size=mini_batch, num_epochs= n_epochs, n_units=n_hidden,
                                     dropout = 0.05, length_scale = l_s, T = T, seed=seed)
         elif model_type == 'MCCONC':
-            self.model = MCCONCDROPWarp(mini_batch_size=mini_batch, n_units=n_hidden,
+            self.model = MCCONCDROPWarp(mini_batch_size=mini_batch, num_epochs= n_epochs, n_units=n_hidden,
                                         length_scale=l_s, T = T, seed=seed)
         elif model_type == 'LCBNN':
             self.model = LCBNNWarp(mini_batch_size=mini_batch,num_epochs= n_epochs, n_units=n_hidden,
                                    dropout=0.05,length_scale=l_s, T=T, util_type=util_type, seed=seed)
+
+        elif model_type == 'LCCD':
+            self.model = LCCDWarp(mini_batch_size=mini_batch, num_epochs=n_epochs, n_units=n_hidden,
+                                  length_scale=l_s, T=T, util_type=util_type, seed=seed)
 
         elif model_type == 'DNGO':
             self.model = DNGOWrap(mini_batch_size=mini_batch,num_epochs= n_epochs, n_units=n_hidden, seed=seed)

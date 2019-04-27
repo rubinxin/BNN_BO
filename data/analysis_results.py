@@ -18,16 +18,21 @@ Test
 # obj_func = 'egg-2d'
 # obj_func = 'branin-2d'
 # obj_func = 'hartmann-6d'
-obj_func = 'ackley-10d'
-# obj_func = 'michalewicz-10d'
-
-batch_size = 1
+# obj_func = 'ackley-10d'
+obj_func = 'michalewicz-10d'
+numEpoch = 1000
+batch_size = 10
 bo_method = 'LCB'
-models_all = ['DNGO','MCDROP','BOHAM','LCBNNse_y','LCBNNse_yclip']
+# models_all = ['DNGO','MCDROP','BOHAM','LCBNNse_y','LCBNNse_yclip']
+# models_all = ['MCDROP','MCDROP1K','LCBNNse_y','LCBNNse_y1K','DNGO']
+models_all = ['MCDROP','MCDROP1K','LCBNNse_y','LCBNNse_y1K']
+
+# models_all = ['LCCD','MCDROP1K','LCBNNse_y1K','DNGO']
+
 # models_all = ['DNGO','MCDROP','BOHAM','LCBNNse_y']
 #
 # models_all = ['GP','MCDROP','LCBNNse_y','LCBNNse_yclip']
-indx = range(60)
+indx = range(30)
 
 f = plt.figure(figsize=(4,4))
 plt.rc('xtick', labelsize=18)
@@ -43,7 +48,7 @@ for model_type in models_all:
     Y_opt_all_seeds = results['Y_opt']
     print(model_type + f'seeds={len(Y_opt_all_seeds)}')
     mean_bestVals = np.mean(Y_opt_all_seeds, 0)
-    err_bestVals = np.std(Y_opt_all_seeds, 0)/len(Y_opt_all_seeds)
+    err_bestVals = np.std(Y_opt_all_seeds, 0)/ len(Y_opt_all_seeds)
     plt.errorbar(indx, mean_bestVals[indx], err_bestVals[indx], label=model_type)
 
 plt.xlabel("Iteration", fontsize=12)
@@ -53,5 +58,5 @@ plt.legend(prop={'size': 12},loc='lower left')
 plt.show()
 # plt.show()
 results_file_name
-f.savefig(obj_func + '/' + obj_func + bo_method + str(batch_size) +  ".pdf", bbox_inches='tight')
+f.savefig(obj_func + '/' + obj_func + bo_method + str(batch_size) + "epoch=" + str(numEpoch) + ".pdf", bbox_inches='tight')
 

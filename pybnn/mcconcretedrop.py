@@ -104,6 +104,8 @@ class Net(nn.Module):
         log_var, regularization[3] = self.conc_drop_logvar(x3, self.out_logvar)
 
         return mean, log_var, regularization.sum()
+        # return mean, regularization.sum()
+
 
 class MCCONCRETEDROP(BaseModel):
 

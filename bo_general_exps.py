@@ -75,7 +75,7 @@ if __name__ == '__main__':
     parser.add_argument('-f', '--func', help='Objective function',
                         default='hartmann-6d', type=str)
     parser.add_argument('-m', '--model', help='Surrogate model: GP or MCDROP or MCCONC or DNGO or BOHAM or LCBNN',
-                        default='LCBNN', type=str)
+                        default='LCCD', type=str)
     parser.add_argument('-acq', '--acq_func', help='Acquisition function: LCB, EI, MES',
                         default='LCB', type=str)
     parser.add_argument('-bm', '--batch_opt', help='Batch option: CL, KB',

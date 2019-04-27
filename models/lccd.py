@@ -1,20 +1,20 @@
-from pybnn.mcconcretedrop import MCCONCRETEDROP
+from pybnn.lccd import LCCD
 from .base import BaseModel
 import numpy as np
 
-class MCCONCDROPWarp(BaseModel):
+class LCCDWarp(BaseModel):
     """
-    A Wrapper for MC Concrete Dropout for a fully connected
-    feed forward neural network..
+    A Wrapper for Loss-Calibrated BNN.
     """
-    def __init__(self, mini_batch_size=10, num_epochs=500,
-                 n_units=[50, 50, 50], length_scale=1e-4,
-                 T = 1000, normalize_input=True, normalize_output=True, seed=42):
+    def __init__(self, mini_batch_size=10,num_epochs=500,
+                 n_units=[50, 50, 50],length_scale = 1e-2, T = 1000, util_type='se_y',
+                 normalize_input=True, normalize_output=True, seed=42):
 
-        self.model = MCCONCRETEDROP(batch_size=mini_batch_size, num_epochs=num_epochs,
+        self.model = LCCD(batch_size=mini_batch_size,num_epochs=num_epochs,
                  n_units_1=n_units[0], n_units_2=n_units[1], n_units_3=n_units[2],
-                 length_scale=length_scale,T = T,
-                 normalize_input=normalize_input, normalize_output=normalize_output, rng=seed)
+                 length_scale = length_scale, T = T,
+                 normalize_input=normalize_input, normalize_output=normalize_output, rng=seed,
+                 weights=None, util_type=util_type)
 
     def _create_model(self, X, Y):
         Y = Y.flatten()

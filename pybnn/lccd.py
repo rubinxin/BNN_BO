@@ -1,15 +1,18 @@
 import time
 import logging
-import numpy as np
 
 import torch
-import torch.nn as nn
-import torch.optim as optim
+from torch import nn
+from torch.nn import functional as F
+from torch import optim
 from torch.autograd import Variable
-
+import numpy as np
 from pybnn.base_model import BaseModel
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 
+# np.random.seed(0)
+# torch.manual_seed(0)
+# torch.cuda.manual_seed(0)
 
 def utility(util_type='se_y', Y_train=0):
     '''Inputs:
@@ -49,7 +52,6 @@ def cal_loss(y_true, y_pred, util, H_x, y_pred_samples):
     return calibrated_loss
 
 
-
 def optimal_h(y_pred_samples, util):
     T, N, D = y_pred_samples.shape
     G_t = torch.zeros((N, D))
@@ -62,41 +64,104 @@ def optimal_h(y_pred_samples, util):
     H_x = I[G_t.argmax(1)]
     return H_x, G_t
 
-# util = utility(util_type=self.util_type)
+class ConcreteDropout(nn.Module):
+    def __init__(self, weight_regularizer=1e-6,
+                 dropout_regularizer=1e-5, init_min=0.1, init_max=0.1):
+        super(ConcreteDropout, self).__init__()
+
+        self.weight_regularizer = weight_regularizer
+        self.dropout_regularizer = dropout_regularizer
+
+        init_min = np.log(init_min) - np.log(1. - init_min)
+        init_max = np.log(init_max) - np.log(1. - init_max)
+
+        self.p_logit = nn.Parameter(torch.empty(1).uniform_(init_min, init_max))
+
+    def forward(self, x, layer):
+        p = torch.sigmoid(self.p_logit)
+
+        out = layer(self._concrete_dropout(x, p))
+
+        sum_of_square = 0
+        for param in layer.parameters():
+            sum_of_square += torch.sum(torch.pow(param, 2))
+
+        weights_regularizer = self.weight_regularizer * sum_of_square / (1 - p)
+
+        dropout_regularizer = p * torch.log(p)
+        dropout_regularizer += (1. - p) * torch.log(1. - p)
+
+        input_dimensionality = x[0].numel()  # Number of elements of first item in batch
+        dropout_regularizer *= self.dropout_regularizer * input_dimensionality
+
+        regularization = weights_regularizer + dropout_regularizer
+        return out, regularization
+
+    def _concrete_dropout(self, x, p):
+        eps = 1e-7
+        temp = 0.1
+
+        unif_noise = torch.rand_like(x)
+
+        drop_prob = (torch.log(p + eps)
+                     - torch.log(1 - p + eps)
+                     + torch.log(unif_noise + eps)
+                     - torch.log(1 - unif_noise + eps))
+
+        drop_prob = torch.sigmoid(drop_prob / temp)
+        random_tensor = 1 - drop_prob
+        retain_prob = 1 - p
+
+        x = torch.mul(x, random_tensor)
+        x /= retain_prob
+
+        return x
 
 class Net(nn.Module):
-    def __init__(self, n_inputs, dropout_p, decay, n_units=[50, 50, 50]):
+    def __init__(self, n_inputs, n_units=[50, 50, 50],
+                 weight_regularizer=1e-6, dropout_regularizer=1e-5):
         super(Net, self).__init__()
-        self.decay = decay
-        self.dropout_p = dropout_p
-        self.dropout = nn.Dropout(p=self.dropout_p)
-        self.fc1 = nn.Linear(n_inputs, n_units[0])
-        self.fc2 = nn.Linear(n_units[0], n_units[1])
-        self.fc3 = nn.Linear(n_units[1], n_units[2])
-        self.out = nn.Linear(n_units[2], 1)
+        self.linear1 = nn.Linear(n_inputs, n_units[0])
+        self.linear2 = nn.Linear(n_units[0], n_units[1])
+        self.linear3 = nn.Linear(n_units[1], n_units[2])
+        self.out_mu = nn.Linear(n_units[2], 1)
+        self.out_logvar = nn.Linear(n_units[2], 1)
+
+        self.conc_drop1 = ConcreteDropout(weight_regularizer=weight_regularizer,
+                                          dropout_regularizer=dropout_regularizer)
+        self.conc_drop2 = ConcreteDropout(weight_regularizer=weight_regularizer,
+                                          dropout_regularizer=dropout_regularizer)
+        self.conc_drop3 = ConcreteDropout(weight_regularizer=weight_regularizer,
+                                          dropout_regularizer=dropout_regularizer)
+        self.conc_drop_mu = ConcreteDropout(weight_regularizer=weight_regularizer,
+                                            dropout_regularizer=dropout_regularizer)
+        self.conc_drop_logvar = ConcreteDropout(weight_regularizer=weight_regularizer,
+                                                dropout_regularizer=dropout_regularizer)
+
+        self.tanh = nn.Tanh()
+
 
     def forward(self, x):
 
-        x = torch.tanh(self.fc1(x))
-        x = self.dropout(x)
+        regularization = torch.empty(4, device=x.device)
+        x1 = self.tanh(self.linear1(x))
+        # x1, regularization[0] = self.conc_drop1(x, nn.Sequential(self.linear1, self.tanh))
+        x2, regularization[0] = self.conc_drop2(x1, nn.Sequential(self.linear2, self.tanh))
+        x3, regularization[1] = self.conc_drop3(x2, nn.Sequential(self.linear3, self.tanh))
 
-        x = torch.tanh(self.fc2(x))
-        x = self.dropout(x)
+        mean, regularization[2] = self.conc_drop_mu(x3, self.out_mu)
+        log_var, regularization[3] = self.conc_drop_logvar(x3, self.out_logvar)
 
-        x = torch.tanh(self.fc3(x))
-        x = self.dropout(x)
+        return mean, log_var, regularization.sum()
 
-        return self.out(x)
-
-
-class LCBNN(BaseModel):
+class LCCD(BaseModel):
 
     def __init__(self, batch_size=10, num_epochs=500,
                  learning_rate=0.01,
                  adapt_epoch=5000, n_units_1=50, n_units_2=50, n_units_3=50,
-                 dropout_p=0.05, length_scale = 1e-1, weight_decay = 1e-6, T = 100,
-                 normalize_input=True, normalize_output=True, rng=None, weights=None,
-                 loss_cal=True, lc_burn=1, util_type='se_y',gpu=True):
+                 length_scale = 1e-1, T = 100,
+                 normalize_input=True, normalize_output=True, rng=42, weights=None,
+                 loss_cal=True, lc_burn=1, util_type='se_y', gpu=True):
         """
         This module performs MC Dropout for a fully connected
         feed forward neural network.
@@ -128,7 +193,7 @@ class LCBNN(BaseModel):
         normalize_input : bool
             Zero mean unit variance normalization of the input values
         rng: random seed
-            Random number generator
+
         """
 
         if rng is None:
@@ -139,13 +204,17 @@ class LCBNN(BaseModel):
         self.seed = rng
         torch.manual_seed(self.seed)
 
+        self.weights = weights
+        self.loss_cal = loss_cal
+        self.lc_burn = lc_burn
+        self.util_type = util_type
         self.X = None
         self.y = None
         self.network = None
-        # self.tau = tau
-        self.decay = weight_decay
         self.length_scale = length_scale
-        self.dropout_p = dropout_p
+        self.gpu = gpu
+        self.device = torch.device("cuda: 0" if torch.cuda.is_available() else "cpu")
+
         self.T = T
         self.normalize_input = normalize_input
         self.normalize_output = normalize_output
@@ -157,19 +226,12 @@ class LCBNN(BaseModel):
         self.n_units_1 = n_units_1
         self.n_units_2 = n_units_2
         self.n_units_3 = n_units_3
-        self.adapt_epoch = adapt_epoch  # TODO check
+        self.adapt_epoch = adapt_epoch # TODO check
         self.network = None
         self.models = []
-        self.weights = weights
-        self.loss_cal = loss_cal
-        self.lc_burn = lc_burn
-        self.util_type = util_type
-        # Use GPU
-        self.gpu = gpu
-        self.device = torch.device("cuda: 0" if torch.cuda.is_available() else "cpu")
 
     @BaseModel._check_shapes_train
-    def train(self, X, y, init=True):
+    def train(self, X, y):
         """
         Trains the model on the provided data.
 
@@ -182,8 +244,6 @@ class LCBNN(BaseModel):
             The corresponding target values.
 
         """
-        # torch.manual_seed(self.seed)
-
         start_time = time.time()
 
         # Normalize inputs
@@ -199,37 +259,27 @@ class LCBNN(BaseModel):
             self.y = y
 
         self.y = self.y[:, None]
-        # print(f'mean_y_train={np.mean(self.y)}')
+
+        N = self.X.shape[0]
         # Check if we have enough points to create a minibatch otherwise use all data points
-        if self.X.shape[0] <= self.batch_size:
-            batch_size = self.X.shape[0]
+        if N <= self.batch_size:
+            batch_size = N
         else:
             batch_size = self.batch_size
 
         # Create the neural network
         features = X.shape[1]
+        wr = self.length_scale ** 2. / N
+        dr = 2. / N
 
-        if init:
-            network = Net(n_inputs=features, dropout_p=self.dropout_p, decay= self.decay,
-                          n_units=[self.n_units_1, self.n_units_2, self.n_units_3])
-
-            # optimizer = optim.Adam(network.parameters(),
-            #                        lr=self.init_learning_rate,
-            #                        weight_decay=self.decay)
-            optimizer = optim.Adam(network.parameters(),
-                                   lr=self.init_learning_rate)
-
-        else:
-            network = self.model
-            # optimizer = optim.Adam(network.parameters(),
-            #                        lr=self.init_learning_rate,
-            #                        weight_decay=self.decay)
-            optimizer = optim.Adam(network.parameters(),
-                                   lr=self.init_learning_rate)
-
-
+        network = Net(n_inputs=features, n_units=[self.n_units_1, self.n_units_2, self.n_units_3],
+                      weight_regularizer=wr, dropout_regularizer=dr)
         if self.gpu:
+            # network = network.cuda()
             network = network.to(self.device)
+
+        optimizer = optim.Adam(network.parameters(),
+                               lr=self.init_learning_rate)
 
         # Start training
         lc = np.zeros([self.num_epochs])
@@ -246,11 +296,11 @@ class LCBNN(BaseModel):
 
             for batch in self.iterate_minibatches(self.X, self.y,
                                                   batch_size, shuffle=True):
+
                 # inputs = torch.Tensor(batch[0])
                 # targets = torch.Tensor(batch[1])
-                inputs = Variable(torch.Tensor(batch[0]))
-                targets = Variable(torch.Tensor(batch[1]))
-
+                inputs =  Variable(torch.FloatTensor(batch[0]))
+                targets = Variable(torch.FloatTensor(batch[1]))
                 if self.gpu:
                     inputs = inputs.to(self.device)
                     targets = targets.to(self.device)
@@ -259,18 +309,16 @@ class LCBNN(BaseModel):
                     h_x  = targets
 
                 optimizer.zero_grad()
-                output = network(inputs)
+                output, log_var, regularization = network(inputs)
+
                 if self.weights is None:
                     loss = torch.nn.functional.mse_loss(output, targets)
-
                 if self.loss_cal and epoch >= self.lc_burn:
                     loss = cal_loss(targets, output, util, h_x, y_pred_samples)
                 else:
                     # criterion = nn.functional.mse_loss(weight=self.weights)
-                    loss =  torch.nn.functional.mse_loss(output, targets)
+                    loss =  torch.nn.functional.mse_loss(output, targets)+ regularization
 
-                    #                 loss = criterion(output, targets)
-                #                 loss = torch.nn.functional.mse_loss(output, targets)
                 loss.backward()
                 optimizer.step()
 
@@ -278,8 +326,9 @@ class LCBNN(BaseModel):
                 train_batches += 1
 
             if self.loss_cal and epoch >= (self.lc_burn - 1):
-                y_pred_samples = [network(inputs) for _ in range(self.T)]
-                y_pred_samples = torch.stack(y_pred_samples)
+             # = torch.stack([tup[0] for tup in MC_samples]).view(T, X_.shape[0]).cpu().data.numpy()
+                mc_samples = [network(inputs) for _ in range(self.T)]
+                y_pred_samples = torch.stack([tup[0] for tup in mc_samples])
                 y_pred_mean = torch.mean(y_pred_samples, 0)
                 h_x = y_pred_mean
 
@@ -290,10 +339,17 @@ class LCBNN(BaseModel):
             total_time = curtime - start_time
             logging.debug("Epoch time {:.3f}s, total time {:.3f}s".format(epoch_time, total_time))
             logging.debug("Training loss:\t\t{:.5g}".format(train_err / train_batches))
-            # if epoch % 20 == 0:
-            #     print(f'epoch={epoch}:cal_loss={loss}')
+
         self.model = network
         self.lc = lc
+
+        # Estimate aleatoric uncertainty
+        X_train_tensor = Variable(torch.FloatTensor(self.X))
+        if self.gpu:
+            X_train_tensor = X_train_tensor.to(self.device)
+        y_train_mc_samples = [network(X_train_tensor) for _ in range(self.T)]
+        y_train_predict_samples = torch.stack([tup[0] for tup in y_train_mc_samples]).view(self.T, N).cpu().data.numpy()
+        self.aleatoric_uncertainty = np.mean(np.mean(y_train_predict_samples - self.y.flatten(), 0))
 
     def iterate_minibatches(self, inputs, targets, batchsize, shuffle=False):
         assert inputs.shape[0] == targets.shape[0], \
@@ -309,7 +365,7 @@ class LCBNN(BaseModel):
             yield inputs[excerpt], targets[excerpt]
 
     @BaseModel._check_shapes_predict
-    def predict(self, X_test, full_sample=False):
+    def predict(self, X_test):
         r"""
         Returns the predictive mean and variance of the objective function at
         the given test points.
@@ -327,10 +383,7 @@ class LCBNN(BaseModel):
             predictive variance
 
         """
-        # torch.manual_seed(self.seed)
-
         # Normalize inputs
-
         if self.normalize_input:
             X_, _, _ = zero_mean_unit_var_normalization(X_test, self.X_mean, self.X_std)
         else:
@@ -338,42 +391,46 @@ class LCBNN(BaseModel):
 
         # Perform MC dropout
         model = self.model
-        T = self.T
-
-        # Yt_hat: T x N x 1
-        if self.gpu:
-            model.cpu()
-            Yt_hat = np.hstack([model(Variable(torch.Tensor(X_[:, np.newaxis]))).data.numpy() for _ in range(T)])
-            # torch.manual_seed(1)
-            # Yt_hat = np.array([model(torch.Tensor(X_)).data.numpy() for _ in range(T)])
-
-        if full_sample:
-            return Yt_hat
+        T     = self.T
+        model.eval()
+        # MC_samples : list T x N x 1
+        # Yt_hat = np.array([model(torch.Tensor(X_)).data.numpy() for _ in range(T)])
+        gpu_test = False
+        if gpu_test:
+            X_tensor = Variable(torch.FloatTensor(X_)).to(self.device)
+            MC_samples = [model(X_tensor) for _ in range(T)]
+            means = torch.stack([tup[0] for tup in MC_samples]).view(T, X_.shape[0]).cpu().data.numpy()
+            # logvar = torch.stack([tup[1] for tup in MC_samples]).view(T, X_.shape[0]).cpu().data.numpy()
         else:
-            tau = self.length_scale ** 2 * (1.0 - self.model.dropout_p) / (2. * self.model.decay * self.X.shape[0])
-            MC_pred_mean = Yt_hat.mean(axis=1)
-            MC_pred_var = Yt_hat.var(axis=1) + 1. / tau
+            model.cpu()
+            MC_samples = [model(Variable(torch.FloatTensor(X_))) for _ in range(T)]
+            means = torch.stack([tup[0] for tup in MC_samples]).view(T, X_.shape[0]).data.numpy()
+            # logvar = torch.stack([tup[1] for tup in MC_samples]).view(T, X_.shape[0]).data.numpy()
 
-            # MC_pred_mean = np.mean(Yt_hat, 0)  # N x 1
-            # Second_moment = np.mean(Yt_hat ** 2, 0)  # N x 1
-            # MC_pred_var = Second_moment - (MC_pred_mean ** 2)  + 1./tau
+        # logvar = np.mean(logvar,0)
+        # aleatoric_uncertainty = np.exp(logvar).mean(0)
+        # epistemic_uncertainty = np.var(means, 0).mean(0)
+        aleatoric_uncertainty = 0
+        MC_pred_mean = np.mean(means, 0)  # N x 1
+        means_var  = np.var(means, 0)
+        MC_pred_var = means_var + aleatoric_uncertainty
 
-            m = MC_pred_mean  # .flatten()
+        m = MC_pred_mean.flatten()
 
-            if MC_pred_var.shape[0] == 1:
-                v = np.clip(MC_pred_var, np.finfo(MC_pred_var.dtype).eps, np.inf)
-            else:
-                v = np.clip(MC_pred_var, np.finfo(MC_pred_var.dtype).eps, np.inf)
-                v[np.where((v < np.finfo(v.dtype).eps) & (v > -np.finfo(v.dtype).eps))] = 0
+        if MC_pred_var.shape[0] == 1:
+            v = np.clip(MC_pred_var, np.finfo(MC_pred_var.dtype).eps, np.inf)
+        else:
+            v = np.clip(MC_pred_var, np.finfo(MC_pred_var.dtype).eps, np.inf)
+            v[np.where((v < np.finfo(v.dtype).eps) & (v > -np.finfo(v.dtype).eps))] = 0
 
-            if self.normalize_output:
-                m = zero_mean_unit_var_denormalization(m, self.y_mean, self.y_std)
-                v *= self.y_std ** 2
+        if self.normalize_output:
+            m = zero_mean_unit_var_denormalization(m, self.y_mean, self.y_std)
+            v *= self.y_std ** 2
 
-            m = m.flatten()
-            v = v.flatten()
+        m = m.flatten()
+        v = v.flatten()
 
-            return m, v
+        return m, v
 
     def get_incumbent(self):
         """
@@ -387,7 +444,7 @@ class LCBNN(BaseModel):
             the observed value of the incumbent
         """
 
-        inc, inc_value = super(LCBNN, self).get_incumbent()
+        inc, inc_value = super(LCCD, self).get_incumbent()
         if self.normalize_input:
             inc = zero_mean_unit_var_denormalization(inc, self.X_mean, self.X_std)
 
@@ -395,4 +452,3 @@ class LCBNN(BaseModel):
             inc_value = zero_mean_unit_var_denormalization(inc_value, self.y_mean, self.y_std)
 
         return inc, inc_value
-
