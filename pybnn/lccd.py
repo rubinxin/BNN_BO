@@ -29,6 +29,11 @@ def utility(util_type='se_y', Y_train=0):
             cond_gain_unscaled = torch.mean(u, 0)
             cond_gain = torch.exp(cond_gain_unscaled) + 1e-8
 
+        elif util_type == 'exp_se_y':
+            u = - (y_pred_samples - H_x) ** 2 - y_pred_samples
+            cond_gain_unscaled = torch.mean(u, 0)
+            cond_gain = torch.exp(torch.exp(cond_gain_unscaled) + 1e-8)
+
         elif util_type == 'se_yclip':
             u_unscaled = - (y_pred_samples - H_x) ** 2
             u_scaled = 1 + torch.exp(u_unscaled)
@@ -41,9 +46,15 @@ def utility(util_type='se_y', Y_train=0):
     return util
 
 
-def cal_loss(y_true, y_pred, util, H_x, y_pred_samples):
+def cal_loss(y_true, y_pred, util, H_x, y_pred_samples, output, log_var, regularization=None):
     a = 1.0
-    loss = nn.functional.mse_loss(y_pred, y_true)
+
+    # loss_1 = nn.functional.mse_loss(y_pred, y_true)
+    if regularization is None:
+        loss = heteroscedastic_loss(y_true, output, log_var)
+    else:
+        loss = heteroscedastic_loss(y_true, output, log_var) + regularization
+    # reg=regularization
     log_condi_gain = torch.log(util(y_pred_samples.detach(), H_x.detach()))
 
     utility_value = a * log_condi_gain.mean()
@@ -117,6 +128,10 @@ class ConcreteDropout(nn.Module):
 
         return x
 
+def heteroscedastic_loss(true, mean, log_var):
+    precision = torch.exp(-log_var)
+    return torch.mean(torch.sum(precision * (true - mean)**2 + log_var, 1), 0)
+
 class Net(nn.Module):
     def __init__(self, n_inputs, n_units=[50, 50, 50],
                  weight_regularizer=1e-6, dropout_regularizer=1e-5):
@@ -135,9 +150,8 @@ class Net(nn.Module):
                                           dropout_regularizer=dropout_regularizer)
         self.conc_drop_mu = ConcreteDropout(weight_regularizer=weight_regularizer,
                                             dropout_regularizer=dropout_regularizer)
-        self.conc_drop_logvar = ConcreteDropout(weight_regularizer=weight_regularizer,
-                                                dropout_regularizer=dropout_regularizer)
-
+        # self.conc_drop_logvar = ConcreteDropout(weight_regularizer=weight_regularizer,
+        #                                         dropout_regularizer=dropout_regularizer)
         self.tanh = nn.Tanh()
 
 
@@ -150,16 +164,17 @@ class Net(nn.Module):
         x3, regularization[1] = self.conc_drop3(x2, nn.Sequential(self.linear3, self.tanh))
 
         mean, regularization[2] = self.conc_drop_mu(x3, self.out_mu)
-        log_var, regularization[3] = self.conc_drop_logvar(x3, self.out_logvar)
+        # log_var, regularization[3] = self.conc_drop_logvar(x3, self.out_logvar)
 
-        return mean, log_var, regularization.sum()
+        # return mean, log_var, regularization.sum()
+        return mean, regularization.sum()
 
 class LCCD(BaseModel):
 
     def __init__(self, batch_size=10, num_epochs=500,
                  learning_rate=0.01,
                  adapt_epoch=5000, n_units_1=50, n_units_2=50, n_units_3=50,
-                 length_scale = 1e-1, T = 100,
+                 length_scale = 1e-1, T = 100, mc_tau=False, regu=False,
                  normalize_input=True, normalize_output=True, rng=42, weights=None,
                  loss_cal=True, lc_burn=1, util_type='se_y', gpu=True):
         """
@@ -214,6 +229,9 @@ class LCCD(BaseModel):
         self.length_scale = length_scale
         self.gpu = gpu
         self.device = torch.device("cuda: 0" if torch.cuda.is_available() else "cpu")
+
+        self.mc_tau = mc_tau
+        self.regu = regu
 
         self.T = T
         self.normalize_input = normalize_input
@@ -309,15 +327,37 @@ class LCCD(BaseModel):
                     h_x  = targets
 
                 optimizer.zero_grad()
-                output, log_var, regularization = network(inputs)
+                # output, log_var, regularization = network(inputs)
+                output, regularization = network(inputs)
 
-                if self.weights is None:
-                    loss = torch.nn.functional.mse_loss(output, targets)
-                if self.loss_cal and epoch >= self.lc_burn:
-                    loss = cal_loss(targets, output, util, h_x, y_pred_samples)
+                # Estimate log_var empirically
+                if self.mc_tau:
+                    minbatch_samples = [network(inputs) for _ in range(self.T)]
+                    y_minibatch_predict_samples = torch.stack([tup[0] for tup in minbatch_samples])
+                    minibatch_var = torch.mean(torch.mean((y_minibatch_predict_samples - targets)**2,0))
                 else:
-                    # criterion = nn.functional.mse_loss(weight=self.weights)
-                    loss =  torch.nn.functional.mse_loss(output, targets)+ regularization
+                    minibatch_var = torch.mean((output - targets)**2)
+                minibatch_log_var = torch.log(minibatch_var)
+
+                if self.regu:
+
+                    if self.weights is None:
+                        loss = heteroscedastic_loss(targets, output, minibatch_log_var)+ regularization
+                    if self.loss_cal and epoch >= self.lc_burn:
+                        loss = cal_loss(targets, output, util, h_x, y_pred_samples, output, minibatch_log_var,
+                                        regularization=regularization)
+                    else:
+                        loss = heteroscedastic_loss(targets, output, minibatch_log_var)+ regularization
+                else:
+
+                    if self.weights is None:
+                        loss = heteroscedastic_loss(targets, output, minibatch_log_var)
+                    if self.loss_cal and epoch >= self.lc_burn:
+                        loss = cal_loss(targets, output, util, h_x, y_pred_samples, output,
+                                        minibatch_log_var, regularization=None)
+                    else:
+                        loss = heteroscedastic_loss(targets, output, minibatch_log_var)
+
 
                 loss.backward()
                 optimizer.step()
@@ -326,8 +366,8 @@ class LCCD(BaseModel):
                 train_batches += 1
 
             if self.loss_cal and epoch >= (self.lc_burn - 1):
-             # = torch.stack([tup[0] for tup in MC_samples]).view(T, X_.shape[0]).cpu().data.numpy()
-                mc_samples = [network(inputs) for _ in range(self.T)]
+                # mc_samples = [network(inputs) for _ in range(self.T)]
+                mc_samples = [network(inputs) for _ in range(10)]
                 y_pred_samples = torch.stack([tup[0] for tup in mc_samples])
                 y_pred_mean = torch.mean(y_pred_samples, 0)
                 h_x = y_pred_mean
@@ -337,6 +377,7 @@ class LCCD(BaseModel):
             curtime = time.time()
             epoch_time = curtime - epoch_start_time
             total_time = curtime - start_time
+
             logging.debug("Epoch time {:.3f}s, total time {:.3f}s".format(epoch_time, total_time))
             logging.debug("Training loss:\t\t{:.5g}".format(train_err / train_batches))
 
@@ -349,7 +390,7 @@ class LCCD(BaseModel):
             X_train_tensor = X_train_tensor.to(self.device)
         y_train_mc_samples = [network(X_train_tensor) for _ in range(self.T)]
         y_train_predict_samples = torch.stack([tup[0] for tup in y_train_mc_samples]).view(self.T, N).cpu().data.numpy()
-        self.aleatoric_uncertainty = np.mean(np.mean(y_train_predict_samples - self.y.flatten(), 0))
+        self.aleatoric_uncertainty = np.mean(np.mean((y_train_predict_samples - self.y.flatten())**2, 0))
 
     def iterate_minibatches(self, inputs, targets, batchsize, shuffle=False):
         assert inputs.shape[0] == targets.shape[0], \
@@ -410,11 +451,11 @@ class LCCD(BaseModel):
         # logvar = np.mean(logvar,0)
         # aleatoric_uncertainty = np.exp(logvar).mean(0)
         # epistemic_uncertainty = np.var(means, 0).mean(0)
-        aleatoric_uncertainty = 0
+        aleatoric_uncertainty = self.aleatoric_uncertainty
         MC_pred_mean = np.mean(means, 0)  # N x 1
         means_var  = np.var(means, 0)
         MC_pred_var = means_var + aleatoric_uncertainty
-
+        # MC_pred_var = means_var + np.mean(np.exp(logvar), 0)
         m = MC_pred_mean.flatten()
 
         if MC_pred_var.shape[0] == 1:

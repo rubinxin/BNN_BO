@@ -68,6 +68,10 @@ class ConcreteDropout(nn.Module):
 
         return x
 
+def heteroscedastic_loss(true, mean, log_var):
+    precision = torch.exp(-log_var)
+    return torch.mean(torch.sum(precision * (true - mean)**2 + log_var, 1), 0)
+
 class Net(nn.Module):
     def __init__(self, n_inputs, n_units=[50, 50, 50],
                  weight_regularizer=1e-6, dropout_regularizer=1e-5):
@@ -76,7 +80,7 @@ class Net(nn.Module):
         self.linear2 = nn.Linear(n_units[0], n_units[1])
         self.linear3 = nn.Linear(n_units[1], n_units[2])
         self.out_mu = nn.Linear(n_units[2], 1)
-        self.out_logvar = nn.Linear(n_units[2], 1)
+        # self.out_logvar = nn.Linear(n_units[2], 1)
 
         self.conc_drop1 = ConcreteDropout(weight_regularizer=weight_regularizer,
                                           dropout_regularizer=dropout_regularizer)
@@ -86,8 +90,8 @@ class Net(nn.Module):
                                           dropout_regularizer=dropout_regularizer)
         self.conc_drop_mu = ConcreteDropout(weight_regularizer=weight_regularizer,
                                             dropout_regularizer=dropout_regularizer)
-        self.conc_drop_logvar = ConcreteDropout(weight_regularizer=weight_regularizer,
-                                                dropout_regularizer=dropout_regularizer)
+        # self.conc_drop_logvar = ConcreteDropout(weight_regularizer=weight_regularizer,
+        #                                         dropout_regularizer=dropout_regularizer)
 
         self.tanh = nn.Tanh()
 
@@ -101,9 +105,9 @@ class Net(nn.Module):
         x3, regularization[1] = self.conc_drop3(x2, nn.Sequential(self.linear3, self.tanh))
 
         mean, regularization[2] = self.conc_drop_mu(x3, self.out_mu)
-        log_var, regularization[3] = self.conc_drop_logvar(x3, self.out_logvar)
+        # log_var, regularization[3] = self.conc_drop_logvar(x3, self.out_logvar)
 
-        return mean, log_var, regularization.sum()
+        return mean, regularization.sum()
         # return mean, regularization.sum()
 
 
@@ -112,7 +116,7 @@ class MCCONCRETEDROP(BaseModel):
     def __init__(self, batch_size=10, num_epochs=500,
                  learning_rate=0.01,
                  adapt_epoch=5000, n_units_1=50, n_units_2=50, n_units_3=50,
-                 length_scale = 1e-4, T = 100,
+                 length_scale = 1e-4, T = 100, regu = False, mc_tau=False,
                  normalize_input=True, normalize_output=True, rng=None, gpu=True):
         """
         This module performs MC Dropout for a fully connected
@@ -161,7 +165,8 @@ class MCCONCRETEDROP(BaseModel):
         self.length_scale = length_scale
         self.gpu = gpu
         self.device = torch.device("cuda: 0" if torch.cuda.is_available() else "cpu")
-
+        self.regu = regu
+        self.mc_tau = mc_tau
         self.T = T
         self.normalize_input = normalize_input
         self.normalize_output = normalize_output
@@ -241,8 +246,6 @@ class MCCONCRETEDROP(BaseModel):
             for batch in self.iterate_minibatches(self.X, self.y,
                                                   batch_size, shuffle=True):
 
-                # inputs = torch.Tensor(batch[0])
-                # targets = torch.Tensor(batch[1])
                 inputs =  Variable(torch.FloatTensor(batch[0]))
                 targets = Variable(torch.FloatTensor(batch[1]))
                 if self.gpu:
@@ -250,9 +253,22 @@ class MCCONCRETEDROP(BaseModel):
                     targets = targets.to(self.device)
 
                 optimizer.zero_grad()
-                output, log_var, regularization = network(inputs)
+                output, regularization = network(inputs)
 
-                loss = torch.nn.functional.mse_loss(output, targets) + regularization
+                # Estimate log_var empirically
+                if self.mc_tau:
+                    minbatch_samples = [network(inputs) for _ in range(self.T)]
+                    y_minibatch_predict_samples = torch.stack([tup[0] for tup in minbatch_samples])
+                    minibatch_var = torch.mean(torch.mean((y_minibatch_predict_samples - targets)**2,0))
+                else:
+                    minibatch_var = torch.mean((output - targets)**2)
+
+                minibatch_log_var = torch.log(minibatch_var)
+
+                if self.regu:
+                    loss = heteroscedastic_loss(targets, output, minibatch_log_var) + regularization
+                else:
+                    loss = heteroscedastic_loss(targets, output, minibatch_log_var)
 
                 loss.backward()
                 optimizer.step()
@@ -269,13 +285,14 @@ class MCCONCRETEDROP(BaseModel):
             logging.debug("Training loss:\t\t{:.5g}".format(train_err / train_batches))
 
         self.model = network
-        # Estimate aleatoric uncertainty
+
+        # Estimate aleatoric uncertainty (overall tau^-1)
         X_train_tensor = Variable(torch.FloatTensor(self.X))
         if self.gpu:
             X_train_tensor = X_train_tensor.to(self.device)
         y_train_mc_samples = [network(X_train_tensor) for _ in range(self.T)]
         y_train_predict_samples = torch.stack([tup[0] for tup in y_train_mc_samples]).view(self.T, N).cpu().data.numpy()
-        self.aleatoric_uncertainty = np.mean(np.mean(y_train_predict_samples - self.y.flatten(),0))
+        self.aleatoric_uncertainty = np.mean(np.mean((y_train_predict_samples - self.y.flatten())**2 ,0))
 
     def iterate_minibatches(self, inputs, targets, batchsize, shuffle=False):
         assert inputs.shape[0] == targets.shape[0], \
@@ -340,6 +357,7 @@ class MCCONCRETEDROP(BaseModel):
         MC_pred_mean = np.mean(means, 0)  # N x 1
         means_var  = np.var(means, 0)
         MC_pred_var = means_var + aleatoric_uncertainty
+        # MC_pred_var = means_var + np.mean(np.exp(logvar), 0)
 
         m = MC_pred_mean.flatten()
 

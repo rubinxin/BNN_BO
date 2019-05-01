@@ -278,7 +278,8 @@ class LCBNN(BaseModel):
                 train_batches += 1
 
             if self.loss_cal and epoch >= (self.lc_burn - 1):
-                y_pred_samples = [network(inputs) for _ in range(self.T)]
+                # y_pred_samples = [network(inputs) for _ in range(self.T)]
+                y_pred_samples = [network(inputs) for _ in range(10)]
                 y_pred_samples = torch.stack(y_pred_samples)
                 y_pred_mean = torch.mean(y_pred_samples, 0)
                 h_x = y_pred_mean
