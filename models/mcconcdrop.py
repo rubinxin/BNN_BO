@@ -9,12 +9,12 @@ class MCCONCDROPWarp(BaseModel):
     """
     def __init__(self, mini_batch_size=10, num_epochs=500,
                  n_units=[50, 50, 50], length_scale=1e-4,
-                 T = 1000, normalize_input=True, normalize_output=True, seed=42):
+                 T = 1000, normalize_input=True, normalize_output=True, seed=42, actv='tanh'):
 
         self.model = MCCONCRETEDROP(batch_size=mini_batch_size, num_epochs=num_epochs,
                  n_units_1=n_units[0], n_units_2=n_units[1], n_units_3=n_units[2],
                  length_scale=length_scale,T = T,
-                 normalize_input=normalize_input, normalize_output=normalize_output, rng=seed)
+                 normalize_input=normalize_input, normalize_output=normalize_output, rng=seed, actv=actv)
 
     def _create_model(self, X, Y):
         Y = Y.flatten()

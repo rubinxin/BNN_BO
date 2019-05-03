@@ -41,6 +41,11 @@ def utility(util_type='se_y', Y_train=0):
             u = torch.where(y_pred_samples < np.mean(Y_train), u_scaled, u_clip)
             cond_gain = torch.mean(u, 0)
 
+        elif util_type == 'se_prod_y':
+            u_unscaled = - (y_pred_samples - H_x) ** 2 * torch.exp(y_pred_samples)
+            cond_gain_unscaled = torch.mean(u_unscaled, 0)
+            cond_gain = torch.exp(cond_gain_unscaled) + 1e-8
+
         return cond_gain
 
     return util
@@ -134,7 +139,7 @@ def heteroscedastic_loss(true, mean, log_var):
 
 class Net(nn.Module):
     def __init__(self, n_inputs, n_units=[50, 50, 50],
-                 weight_regularizer=1e-6, dropout_regularizer=1e-5):
+                 weight_regularizer=1e-6, dropout_regularizer=1e-5, actv='tanh'):
         super(Net, self).__init__()
         self.linear1 = nn.Linear(n_inputs, n_units[0])
         self.linear2 = nn.Linear(n_units[0], n_units[1])
@@ -152,16 +157,18 @@ class Net(nn.Module):
                                             dropout_regularizer=dropout_regularizer)
         # self.conc_drop_logvar = ConcreteDropout(weight_regularizer=weight_regularizer,
         #                                         dropout_regularizer=dropout_regularizer)
-        self.tanh = nn.Tanh()
-
+        if actv == 'relu':
+            self.activation = nn.ReLU()
+        else:
+            self.activation = nn.Tanh()
 
     def forward(self, x):
 
         regularization = torch.empty(4, device=x.device)
-        x1 = self.tanh(self.linear1(x))
-        # x1, regularization[0] = self.conc_drop1(x, nn.Sequential(self.linear1, self.tanh))
-        x2, regularization[0] = self.conc_drop2(x1, nn.Sequential(self.linear2, self.tanh))
-        x3, regularization[1] = self.conc_drop3(x2, nn.Sequential(self.linear3, self.tanh))
+        x1 = self.activation(self.linear1(x))
+        # x1, regularization[0] = self.conc_drop1(x, nn.Sequential(self.linear1, self.activation))
+        x2, regularization[0] = self.conc_drop2(x1, nn.Sequential(self.linear2, self.activation))
+        x3, regularization[1] = self.conc_drop3(x2, nn.Sequential(self.linear3, self.activation))
 
         mean, regularization[2] = self.conc_drop_mu(x3, self.out_mu)
         # log_var, regularization[3] = self.conc_drop_logvar(x3, self.out_logvar)
@@ -176,7 +183,7 @@ class LCCD(BaseModel):
                  adapt_epoch=5000, n_units_1=50, n_units_2=50, n_units_3=50,
                  length_scale = 1e-1, T = 100, mc_tau=False, regu=False,
                  normalize_input=True, normalize_output=True, rng=42, weights=None,
-                 loss_cal=True, lc_burn=1, util_type='se_y', gpu=True):
+                 loss_cal=True, lc_burn=1, util_type='se_y', gpu=True, actv='tanh'):
         """
         This module performs MC Dropout for a fully connected
         feed forward neural network.
@@ -232,6 +239,7 @@ class LCCD(BaseModel):
 
         self.mc_tau = mc_tau
         self.regu = regu
+        self.actv = actv
 
         self.T = T
         self.normalize_input = normalize_input
@@ -291,7 +299,7 @@ class LCCD(BaseModel):
         dr = 2. / N
 
         network = Net(n_inputs=features, n_units=[self.n_units_1, self.n_units_2, self.n_units_3],
-                      weight_regularizer=wr, dropout_regularizer=dr)
+                      weight_regularizer=wr, dropout_regularizer=dr, actv=self.actv)
         if self.gpu:
             # network = network.cuda()
             network = network.to(self.device)
@@ -366,11 +374,16 @@ class LCCD(BaseModel):
                 train_batches += 1
 
             if self.loss_cal and epoch >= (self.lc_burn - 1):
-                # mc_samples = [network(inputs) for _ in range(self.T)]
                 mc_samples = [network(inputs) for _ in range(10)]
                 y_pred_samples = torch.stack([tup[0] for tup in mc_samples])
-                y_pred_mean = torch.mean(y_pred_samples, 0)
-                h_x = y_pred_mean
+
+                if self.util_type == 'se_prod_y':
+                    numerator = torch.sum(y_pred_samples * torch.exp(y_pred_samples),0)
+                    denominator = torch.sum(torch.exp(y_pred_samples),0)
+                    h_x = numerator / denominator
+                else:
+                    y_pred_mean = torch.mean(y_pred_samples, 0)
+                    h_x = y_pred_mean
 
             lc[epoch] = train_err / train_batches
             logging.debug("Epoch {} of {}".format(epoch + 1, self.num_epochs))
@@ -433,9 +446,10 @@ class LCCD(BaseModel):
         # Perform MC dropout
         model = self.model
         T     = self.T
-        model.eval()
+        # model.eval()
         # MC_samples : list T x N x 1
         # Yt_hat = np.array([model(torch.Tensor(X_)).data.numpy() for _ in range(T)])
+        # start_mc=time.time()
         gpu_test = False
         if gpu_test:
             X_tensor = Variable(torch.FloatTensor(X_)).to(self.device)
@@ -448,6 +462,8 @@ class LCCD(BaseModel):
             means = torch.stack([tup[0] for tup in MC_samples]).view(T, X_.shape[0]).data.numpy()
             # logvar = torch.stack([tup[1] for tup in MC_samples]).view(T, X_.shape[0]).data.numpy()
 
+        # mc_time = time.time() - start_mc
+        # print(f'mc_time={mc_time}')
         # logvar = np.mean(logvar,0)
         # aleatoric_uncertainty = np.exp(logvar).mean(0)
         # epistemic_uncertainty = np.var(means, 0).mean(0)

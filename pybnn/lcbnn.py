@@ -33,6 +33,16 @@ def utility(util_type='se_y', Y_train=0):
             u = torch.where(y_pred_samples < np.mean(Y_train), u_scaled, u_clip)
             cond_gain = torch.mean(u, 0)
 
+        elif util_type == 'exp_se_y':
+            u = - (y_pred_samples - H_x) ** 2 - y_pred_samples
+            cond_gain_unscaled = torch.mean(u, 0)
+            cond_gain = torch.exp(torch.exp(cond_gain_unscaled) + 1e-8)
+
+        elif util_type == 'se_prod_y':
+            u_unscaled = - (y_pred_samples - H_x) ** 2 * torch.exp(y_pred_samples)
+            cond_gain_unscaled = torch.mean(u_unscaled, 0)
+            cond_gain = torch.exp(cond_gain_unscaled) + 1e-8
+
         return cond_gain
 
     return util
@@ -65,7 +75,7 @@ def optimal_h(y_pred_samples, util):
 # util = utility(util_type=self.util_type)
 
 class Net(nn.Module):
-    def __init__(self, n_inputs, dropout_p, decay, n_units=[50, 50, 50]):
+    def __init__(self, n_inputs, dropout_p, decay, n_units=[50, 50, 50], actv='tanh'):
         super(Net, self).__init__()
         self.decay = decay
         self.dropout_p = dropout_p
@@ -74,16 +84,20 @@ class Net(nn.Module):
         self.fc2 = nn.Linear(n_units[0], n_units[1])
         self.fc3 = nn.Linear(n_units[1], n_units[2])
         self.out = nn.Linear(n_units[2], 1)
+        if actv == 'relu':
+            self.activation = nn.ReLU()
+        else:
+            self.activation = nn.Tanh()
 
     def forward(self, x):
 
-        x = torch.tanh(self.fc1(x))
+        x = self.activation(self.fc1(x))
         x = self.dropout(x)
 
-        x = torch.tanh(self.fc2(x))
+        x = self.activation(self.fc2(x))
         x = self.dropout(x)
 
-        x = torch.tanh(self.fc3(x))
+        x = self.activation(self.fc3(x))
         x = self.dropout(x)
 
         return self.out(x)
@@ -96,7 +110,7 @@ class LCBNN(BaseModel):
                  adapt_epoch=5000, n_units_1=50, n_units_2=50, n_units_3=50,
                  dropout_p=0.05, length_scale = 1e-1, weight_decay = 1e-6, T = 100,
                  normalize_input=True, normalize_output=True, rng=None, weights=None,
-                 loss_cal=True, lc_burn=1, util_type='se_y',gpu=True):
+                 loss_cal=True, lc_burn=1, util_type='se_y',gpu=True, actv='tanh'):
         """
         This module performs MC Dropout for a fully connected
         feed forward neural network.
@@ -149,6 +163,7 @@ class LCBNN(BaseModel):
         self.T = T
         self.normalize_input = normalize_input
         self.normalize_output = normalize_output
+        self.actv = actv
 
         self.num_epochs = num_epochs
         self.batch_size = batch_size
@@ -211,7 +226,7 @@ class LCBNN(BaseModel):
 
         if init:
             network = Net(n_inputs=features, dropout_p=self.dropout_p, decay= self.decay,
-                          n_units=[self.n_units_1, self.n_units_2, self.n_units_3])
+                          n_units=[self.n_units_1, self.n_units_2, self.n_units_3], actv=self.actv)
 
             # optimizer = optim.Adam(network.parameters(),
             #                        lr=self.init_learning_rate,
@@ -281,8 +296,14 @@ class LCBNN(BaseModel):
                 # y_pred_samples = [network(inputs) for _ in range(self.T)]
                 y_pred_samples = [network(inputs) for _ in range(10)]
                 y_pred_samples = torch.stack(y_pred_samples)
-                y_pred_mean = torch.mean(y_pred_samples, 0)
-                h_x = y_pred_mean
+
+                if self.util_type == 'se_prod_y':
+                    numerator = torch.sum(y_pred_samples * torch.exp(y_pred_samples),0)
+                    denominator = torch.sum(torch.exp(y_pred_samples),0)
+                    h_x = numerator / denominator
+                else:
+                    y_pred_mean = torch.mean(y_pred_samples, 0)
+                    h_x = y_pred_mean
 
             lc[epoch] = train_err / train_batches
             logging.debug("Epoch {} of {}".format(epoch + 1, self.num_epochs))
@@ -341,12 +362,21 @@ class LCBNN(BaseModel):
         model = self.model
         T = self.T
 
+        # start_mc=time.time()
         # Yt_hat: T x N x 1
-        if self.gpu:
+        gpu_test = False
+        if gpu_test:
+            X_tensor = Variable(torch.Tensor(X_[:, np.newaxis])).to(self.device)
+            Yt_hat = np.hstack([model(X_tensor).cpu().data.numpy() for _ in range(T)])
+        else:
             model.cpu()
-            Yt_hat = np.hstack([model(Variable(torch.Tensor(X_[:, np.newaxis]))).data.numpy() for _ in range(T)])
+            X_tensor = Variable(torch.Tensor(X_[:, np.newaxis]))
+            Yt_hat = np.hstack([model(X_tensor).data.numpy() for _ in range(T)])
             # torch.manual_seed(1)
             # Yt_hat = np.array([model(torch.Tensor(X_)).data.numpy() for _ in range(T)])
+
+        # mc_time = time.time() - start_mc
+        # print(f'mc_time={mc_time}')
 
         if full_sample:
             return Yt_hat

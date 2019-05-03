@@ -12,7 +12,7 @@ from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean
 
 
 class Net(nn.Module):
-    def __init__(self, n_inputs, dropout_p, decay, n_units=[50, 50, 50]):
+    def __init__(self, n_inputs, dropout_p, decay, n_units=[50, 50, 50], actv='tanh'):
         super(Net, self).__init__()
         self.decay = decay
         self.dropout_p = dropout_p
@@ -22,17 +22,23 @@ class Net(nn.Module):
         self.fc3 = nn.Linear(n_units[1], n_units[2])
         self.out = nn.Linear(n_units[2], 1)
 
+        if actv == 'relu':
+            self.activation = nn.ReLU()
+        else:
+            self.activation = nn.Tanh()
+
+
     def forward(self, x):
 
-        x = torch.tanh(self.fc1(x))
-        x = self.dropout(x)
+        x = self.activation(self.fc1(x))
 
-        x = torch.tanh(self.fc2(x))
         x = self.dropout(x)
+        x = self.activation(self.fc2(x))
 
-        x = torch.tanh(self.fc3(x))
         x = self.dropout(x)
+        x = self.activation(self.fc3(x))
 
+        x = self.dropout(x)
         return self.out(x)
 
 
@@ -42,7 +48,7 @@ class MCDROP(BaseModel):
                  learning_rate=0.01,
                  adapt_epoch=5000, n_units_1=50, n_units_2=50, n_units_3=50,
                  dropout_p = 0.05, length_scale = 1e-1, weight_decay = 1e-6, T = 100,
-                 normalize_input=True, normalize_output=True, rng=None, gpu=True):
+                 normalize_input=True, normalize_output=True, rng=None, gpu=True, actv='tanh'):
         """
         This module performs MC Dropout for a fully connected
         feed forward neural network.
@@ -96,6 +102,7 @@ class MCDROP(BaseModel):
         self.normalize_input = normalize_input
         self.normalize_output = normalize_output
         self.gpu = gpu
+        self.actv = actv
 
         self.num_epochs = num_epochs
         self.batch_size = batch_size
@@ -152,7 +159,7 @@ class MCDROP(BaseModel):
         features = X.shape[1]
 
         network = Net(n_inputs=features, dropout_p=self.dropout_p, decay=self.decay,
-                      n_units=[self.n_units_1, self.n_units_2, self.n_units_3])
+                      n_units=[self.n_units_1, self.n_units_2, self.n_units_3], actv=self.actv)
 
         if self.gpu:
             network = network.to(self.device)
@@ -243,6 +250,8 @@ class MCDROP(BaseModel):
         model = self.model
         T     = self.T
 
+
+        # start_mc=time.time()
         # Yt_hat: T x N x 1
         if self.gpu:
             model.cpu()
@@ -253,6 +262,9 @@ class MCDROP(BaseModel):
         else:
             # Yt_hat = np.array([model(Variable(torch.Tensor(X_))).data.numpy() for _ in range(T)])
             Yt_hat = np.hstack([model(Variable(torch.Tensor(X_[:, np.newaxis]))).data.numpy() for _ in range(T)])
+
+        # mc_time = time.time() - start_mc
+        # print(f'mc_time={mc_time}')
 
         tau = self.length_scale**2 * (1.0 - self.model.dropout_p) / (2. * self.model.decay * self.X.shape[0])
         # MC_pred_mean = np.mean(Yt_hat, 0)  # N x 1

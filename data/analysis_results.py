@@ -13,26 +13,23 @@ import pickle
 '''
 Test
 '''
-
-# obj_func = 'rosenbrock-2d'
-# obj_func = 'egg-2d'
-# obj_func = 'branin-2d'
-# obj_func = 'hartmann-6d'
-# obj_func = 'ackley-10d'
-obj_func = 'michalewicz-10d'
+# obj_func = 'rosenbrock-2d' # all completed
+# obj_func = 'egg-2d'        # all completed except LCCDtanh, LCCDrelu, MCCONCrelu
+# obj_func = 'branin-2d'       # all completed except LCCDtanh
+# obj_func = 'hartmann-6d'      # all completed except LCCDtanh, LCCDrelu,MCCONCrelu
+obj_func = 'ackley-10d'         # all completed except LCCDtanh, LCCDrelu,MCCONCrelu
+# obj_func = 'michalewicz-10d'      # all imcomplete
 numEpoch = 1000
-batch_size = 10
+batch_size = 1
 bo_method = 'LCB'
 # models_all = ['DNGO','MCDROP','BOHAM','LCBNNse_y','LCBNNse_yclip']
-# models_all = ['MCDROP','MCDROP1K','LCBNNse_y','LCBNNse_y1K','DNGO']
-models_all = ['MCDROP','MCDROP1K','LCBNNse_y','LCBNNse_y1K']
+# models_all = ['LCBNNtanhse_y','MCDROPtanh','LCCDtanh','MCCONCtanh']
+models_all = ['LCBNNtanhse_y','MCDROPtanh','LCCDtanh','MCCONCtanh','LCBNNreluse_y','MCDROPrelu']
+# models_all = ['LCBNNtanhse_y','MCDROPtanh','LCCDtanh','MCCONCtanh','LCBNNreluse_y','MCDROPrelu','LCCDrelu','MCCONCrelu']
 
-# models_all = ['LCCD','MCDROP1K','LCBNNse_y1K','DNGO']
-
-# models_all = ['DNGO','MCDROP','BOHAM','LCBNNse_y']
+# models_all = ['DNGO','MCDROPtanh','BOHAM','GP','LCBNNtanhse_y']
 #
-# models_all = ['GP','MCDROP','LCBNNse_y','LCBNNse_yclip']
-indx = range(30)
+indx = range(60)
 
 f = plt.figure(figsize=(4,4))
 plt.rc('xtick', labelsize=18)
@@ -46,6 +43,7 @@ for model_type in models_all:
         results = pickle.load(file)
 
     Y_opt_all_seeds = results['Y_opt']
+    Time_all_seeds = results['runtime']
     print(model_type + f'seeds={len(Y_opt_all_seeds)}')
     mean_bestVals = np.mean(Y_opt_all_seeds, 0)
     err_bestVals = np.std(Y_opt_all_seeds, 0)/ len(Y_opt_all_seeds)

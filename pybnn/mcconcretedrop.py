@@ -46,6 +46,7 @@ class ConcreteDropout(nn.Module):
         dropout_regularizer *= self.dropout_regularizer * input_dimensionality
 
         regularization = weights_regularizer + dropout_regularizer
+
         return out, regularization
 
     def _concrete_dropout(self, x, p):
@@ -74,7 +75,7 @@ def heteroscedastic_loss(true, mean, log_var):
 
 class Net(nn.Module):
     def __init__(self, n_inputs, n_units=[50, 50, 50],
-                 weight_regularizer=1e-6, dropout_regularizer=1e-5):
+                 weight_regularizer=1e-6, dropout_regularizer=1e-5, actv='tanh'):
         super(Net, self).__init__()
         self.linear1 = nn.Linear(n_inputs, n_units[0])
         self.linear2 = nn.Linear(n_units[0], n_units[1])
@@ -93,23 +94,39 @@ class Net(nn.Module):
         # self.conc_drop_logvar = ConcreteDropout(weight_regularizer=weight_regularizer,
         #                                         dropout_regularizer=dropout_regularizer)
 
-        self.tanh = nn.Tanh()
-
+        if actv == 'relu':
+            self.activation = nn.ReLU()
+        else:
+            self.activation = nn.Tanh()
 
     def forward(self, x):
 
         regularization = torch.empty(4, device=x.device)
-        x1 = self.tanh(self.linear1(x))
-        # x1, regularization[0] = self.conc_drop1(x, nn.Sequential(self.linear1, self.tanh))
-        x2, regularization[0] = self.conc_drop2(x1, nn.Sequential(self.linear2, self.tanh))
-        x3, regularization[1] = self.conc_drop3(x2, nn.Sequential(self.linear3, self.tanh))
+        x1 = self.activation(self.linear1(x))
+        # x1, regularization[0] = self.conc_drop1(x, nn.Sequential(self.linear1, self.activation))
+        x2, regularization[0] = self.conc_drop2(x1, nn.Sequential(self.linear2, self.activation))
+
+        x3, regularization[1] = self.conc_drop3(x2, nn.Sequential(self.linear3, self.activation))
 
         mean, regularization[2] = self.conc_drop_mu(x3, self.out_mu)
         # log_var, regularization[3] = self.conc_drop_logvar(x3, self.out_logvar)
-
         return mean, regularization.sum()
-        # return mean, regularization.sum()
+    #     # return mean, regularization.sum()
 
+    # def forward(self, x):
+    #
+    #     x = self.activation(self.linear1(x))
+    #
+    #     x = self.dropout(x)
+    #     x = self.activation(self.linear2(x))
+    #
+    #     x = self.dropout(x)
+    #     x = self.activation(self.linear3(x))
+    #
+    #     x = self.dropout(x)
+    #
+    #     regularization = 0
+    #     return self.out_mu(x), regularization
 
 class MCCONCRETEDROP(BaseModel):
 
@@ -117,7 +134,7 @@ class MCCONCRETEDROP(BaseModel):
                  learning_rate=0.01,
                  adapt_epoch=5000, n_units_1=50, n_units_2=50, n_units_3=50,
                  length_scale = 1e-4, T = 100, regu = False, mc_tau=False,
-                 normalize_input=True, normalize_output=True, rng=None, gpu=True):
+                 normalize_input=True, normalize_output=True, rng=None, gpu=True, actv='tanh'):
         """
         This module performs MC Dropout for a fully connected
         feed forward neural network.
@@ -170,6 +187,7 @@ class MCCONCRETEDROP(BaseModel):
         self.T = T
         self.normalize_input = normalize_input
         self.normalize_output = normalize_output
+        self.actv = actv
 
         self.num_epochs = num_epochs
         self.batch_size = batch_size
@@ -226,7 +244,7 @@ class MCCONCRETEDROP(BaseModel):
         wr = self.length_scale ** 2. / N
         dr = 2. / N
         network = Net(n_inputs=features, n_units=[self.n_units_1, self.n_units_2, self.n_units_3],
-                      weight_regularizer=wr, dropout_regularizer=dr)
+                      weight_regularizer=wr, dropout_regularizer=dr,  actv=self.actv)
         if self.gpu:
             # network = network.cuda()
             network = network.to(self.device)
@@ -335,9 +353,10 @@ class MCCONCRETEDROP(BaseModel):
         # Perform MC dropout
         model = self.model
         T     = self.T
-        model.eval()
+        # model.eval()
         # MC_samples : list T x N x 1
         # Yt_hat = np.array([model(torch.Tensor(X_)).data.numpy() for _ in range(T)])
+        # start_mc=time.time()
         gpu_test = False
         if gpu_test:
             X_tensor = Variable(torch.FloatTensor(X_)).to(self.device)
@@ -348,8 +367,12 @@ class MCCONCRETEDROP(BaseModel):
             model.cpu()
             MC_samples = [model(Variable(torch.FloatTensor(X_))) for _ in range(T)]
             means = torch.stack([tup[0] for tup in MC_samples]).view(T, X_.shape[0]).data.numpy()
-            # logvar = torch.stack([tup[1] for tup in MC_samples]).view(T, X_.shape[0]).data.numpy()
+            # # logvar = torch.stack([tup[1] for tup in MC_samples]).view(T, X_.shape[0]).data.numpy()
+            # MC_samples = [model(Variable(torch.FloatTensor(X_))) for _ in range(T)]
+            # means = torch.stack([model(Variable(torch.FloatTensor(X_)))[0] for _ in range(T)]).view(T, X_.shape[0]).data.numpy()
 
+        # mc_time = time.time() - start_mc
+        # print(f'mc_time={mc_time}')
         # logvar = np.mean(logvar,0)
         # aleatoric_uncertainty = np.exp(logvar).mean(0)
         # epistemic_uncertainty = np.var(means, 0).mean(0)

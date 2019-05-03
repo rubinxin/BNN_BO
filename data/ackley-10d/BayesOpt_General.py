@@ -14,7 +14,6 @@ from models.mcdrop import MCDROPWarp
 from models.dngo import DNGOWrap
 from models.bohamiann import BOHAMIANNWarp
 from models.lcbnn import LCBNNWarp
-from models.lccd import LCCDWarp
 from models.mcconcdrop import MCCONCDROPWarp
 from utilities.utilities import sample_fmin_Gumble
 import time
@@ -26,9 +25,7 @@ class Bayes_opt():
         self.noise_var = noise_var
 
     def initialise(self, X_init=None, Y_init=None, kernel=None, n_fmin_samples=1, model_type='GP',
-                   n_hidden=[50, 50, 50], bo_method='LCB', batch_option='CL', batch_size=1, seed=42, util_type='se_y',
-                   actv_func='tanh'):
-
+                   n_hidden=[50, 50, 50], bo_method='LCB', batch_option='CL', batch_size=1, seed=42, util_type='se_y'):
         assert X_init.ndim == 2, "X_init has to be 2D array"
         assert Y_init.ndim == 2, "Y_init has to be 2D array"
         self.X_init = X_init
@@ -50,10 +47,9 @@ class Bayes_opt():
 
         # --- Param for NN models --- #
         mini_batch = 10
-        T = 100
+        T = 200
         l_s = 1e-1
         n_epochs = 1000
-        activation = actv_func
 
         # Specify the model
         if model_type == 'GP':
@@ -66,17 +62,13 @@ class Bayes_opt():
 
         elif model_type == 'MCDROP':
             self.model = MCDROPWarp(mini_batch_size=mini_batch, num_epochs= n_epochs, n_units=n_hidden,
-                                    dropout = 0.05, length_scale = l_s, T = T, seed=seed, actv=activation)
+                                    dropout = 0.05, length_scale = l_s, T = T, seed=seed)
         elif model_type == 'MCCONC':
-            self.model = MCCONCDROPWarp(mini_batch_size=mini_batch, num_epochs= n_epochs, n_units=n_hidden,
-                                        length_scale=l_s, T = T, seed=seed, actv=activation)
+            self.model = MCCONCDROPWarp(mini_batch_size=mini_batch, n_units=n_hidden,
+                                        length_scale=l_s, T = T, seed=seed)
         elif model_type == 'LCBNN':
             self.model = LCBNNWarp(mini_batch_size=mini_batch,num_epochs= n_epochs, n_units=n_hidden,
-                                   dropout=0.05,length_scale=l_s, T=T, util_type=util_type, seed=seed, actv=activation)
-
-        elif model_type == 'LCCD':
-            self.model = LCCDWarp(mini_batch_size=mini_batch, num_epochs=n_epochs, n_units=n_hidden,
-                                  length_scale=l_s, T=T, util_type=util_type, seed=seed, actv=activation)
+                                   dropout=0.05,length_scale=l_s, T=T, util_type=util_type, seed=seed)
 
         elif model_type == 'DNGO':
             self.model = DNGOWrap(mini_batch_size=mini_batch,num_epochs= n_epochs, n_units=n_hidden, seed=seed)
@@ -143,8 +135,7 @@ class Bayes_opt():
             # optimise the marginalised posterior mean to get the prediction for the global optimum/optimiser
             # x_opt, pos_opt = self._global_minimiser_cheap(self.pos_mean,func_gradient=self.d_pos_mean)
             # y_opt = self.func(x_opt)
-            print(f'opt_aq_time={t_opt_acq};update_model_time={t_update_model}')
-
+            
             #  store data
             X_query = np.vstack((X_query, np.atleast_2d(x_next_batch)))
             Y_query = np.vstack((Y_query, np.atleast_2d(y_next_batch)))
