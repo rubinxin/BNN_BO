@@ -59,10 +59,10 @@ def BNN_BO_Exps(obj_func, model_type, bo_method, batch_option, batch_size,
         if not os.path.exists(saving_path):
             os.makedirs(saving_path)
 
-        if model_type == 'LCBNN':
-            results_file_name = saving_path + '/' + model_type + bo_method + str(batch_size) + util_type
+        if model_type == 'LCBNN' or model_type == 'LCCD' :
+            results_file_name = saving_path + '/' + model_type + activation + util_type + bo_method + str(batch_size)
         else:
-            results_file_name = saving_path + '/' + model_type + bo_method + str(batch_size)
+            results_file_name = saving_path + '/' + model_type + activation + bo_method + str(batch_size)
 
         results = {'X_opt': X_opt_all_seeds,
                    'Y_opt': Y_opt_all_seeds,
@@ -78,7 +78,7 @@ if __name__ == '__main__':
     parser.add_argument('-f', '--func', help='Objective function',
                         default='egg-2d', type=str)
     parser.add_argument('-m', '--model', help='Surrogate model: GP or MCDROP or MCCONC or DNGO or BOHAM or LCBNN',
-                        default='LCCD', type=str)
+                        default='LCBNN', type=str)
     parser.add_argument('-acq', '--acq_func', help='Acquisition function: LCB, EI, MES',
                         default='LCB', type=str)
     parser.add_argument('-bm', '--batch_opt', help='Batch option: CL, KB',

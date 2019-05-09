@@ -19,18 +19,22 @@ class LCBNNWarp(BaseModel):
 
     def _create_model(self, X, Y):
         Y = Y.flatten()
-        self.model.train(X, Y)
+        train_mes_loss, train_util = self.model.train(X, Y)
 
-    def _update_model(self,  X_all, Y_all):
+    def _update_model(self,  X_all, Y_all, itr=0, seed = None):
         """
         Updates the model with new observations.
         """
         Y_all = Y_all.flatten()
 
         if self.model is None:
-            self._create_model(X_all, Y_all)
+            train_mes_loss, train_util = self._create_model(X_all, Y_all)
         else:
-            self.model.train(X_all, Y_all)
+            train_mes_loss, train_util = self.model.train(X_all, Y_all)
+
+        np.save(f'lcbnn_train_mse_loss_i{itr}',train_mes_loss)
+        np.save(f'lcbnn_train_util_i{itr}',train_util)
+
 
     def predict(self, X):
         """

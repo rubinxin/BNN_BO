@@ -50,13 +50,13 @@ def utility(util_type='se_y', Y_train=0):
 
 def cal_loss(y_true, y_pred, util, H_x, y_pred_samples):
     a = 1.0
-    loss = nn.functional.mse_loss(y_pred, y_true)
+    mse_loss = nn.functional.mse_loss(y_pred, y_true)
     log_condi_gain = torch.log(util(y_pred_samples.detach(), H_x.detach()))
 
     utility_value = a * log_condi_gain.mean()
-    calibrated_loss = loss - utility_value
+    calibrated_loss = mse_loss - utility_value
 
-    return calibrated_loss
+    return calibrated_loss, mse_loss
 
 
 
@@ -252,12 +252,18 @@ class LCBNN(BaseModel):
         if self.loss_cal:
             util = utility(util_type=self.util_type, Y_train=self.y)
 
+        training_loss_all_epoch = []
+        training_logutil_all_epoch = []
+
         for epoch in range(self.num_epochs):
 
             epoch_start_time = time.time()
 
             train_err = 0
             train_batches = 0
+
+            training_loss = []
+            training_logutil = []
 
             for batch in self.iterate_minibatches(self.X, self.y,
                                                   batch_size, shuffle=True):
@@ -279,13 +285,13 @@ class LCBNN(BaseModel):
                     loss = torch.nn.functional.mse_loss(output, targets)
 
                 if self.loss_cal and epoch >= self.lc_burn:
-                    loss = cal_loss(targets, output, util, h_x, y_pred_samples)
+                    loss, mse_loss = cal_loss(targets, output, util, h_x, y_pred_samples)
+                    training_loss.append(mse_loss)
+                    training_logutil.append(mse_loss - loss)
                 else:
                     # criterion = nn.functional.mse_loss(weight=self.weights)
                     loss =  torch.nn.functional.mse_loss(output, targets)
 
-                    #                 loss = criterion(output, targets)
-                #                 loss = torch.nn.functional.mse_loss(output, targets)
                 loss.backward()
                 optimizer.step()
 
@@ -305,6 +311,12 @@ class LCBNN(BaseModel):
                     y_pred_mean = torch.mean(y_pred_samples, 0)
                     h_x = y_pred_mean
 
+            training_loss_np = torch.FloatTensor(training_loss).data.numpy()
+            training_loss_all_epoch.append(training_loss_np)
+            training_logutil_np = torch.FloatTensor(training_logutil).data.numpy()
+            training_loss_all_epoch.append(training_loss_np)
+            training_logutil_all_epoch.append(training_logutil_np)
+
             lc[epoch] = train_err / train_batches
             logging.debug("Epoch {} of {}".format(epoch + 1, self.num_epochs))
             curtime = time.time()
@@ -314,8 +326,14 @@ class LCBNN(BaseModel):
             logging.debug("Training loss:\t\t{:.5g}".format(train_err / train_batches))
             # if epoch % 20 == 0:
             #     print(f'epoch={epoch}:cal_loss={loss}')
+
         self.model = network
         self.lc = lc
+
+        train_loss_all_epoch = np.array(training_loss_all_epoch[1:])
+        train_logutil_all_epoch = np.array(training_logutil_all_epoch[1:])
+
+        return train_loss_all_epoch, train_logutil_all_epoch
 
     def iterate_minibatches(self, inputs, targets, batchsize, shuffle=False):
         assert inputs.shape[0] == targets.shape[0], \

@@ -109,7 +109,7 @@ class Bayes_opt():
         self.e = np.exp(1)
 
         #  Fit GP model to the data
-        self.model._update_model(self.X, self.Y)
+        self.model._update_model(self.X, self.Y,seed=self.seed)
 
         for k in range(iterations):
 
@@ -129,7 +129,7 @@ class Bayes_opt():
 
             #  update GP model with new data
             start_time2 = time.time()
-            self.model._update_model(self.X, self.Y)
+            self.model._update_model(self.X, self.Y, itr=k,seed=self.seed)
             t_update_model = time.time()- start_time2
             time_record[k,1] =  t_update_model
 
