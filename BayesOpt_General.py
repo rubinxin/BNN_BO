@@ -20,10 +20,11 @@ from utilities.utilities import sample_fmin_Gumble
 import time
 
 class Bayes_opt():
-    def __init__(self, func, bounds, noise_var):
+    def __init__(self, func, bounds, noise_var, saving_path):
         self.func = func
         self.bounds = bounds
         self.noise_var = noise_var
+        self.saving_path = saving_path
 
     def initialise(self, X_init=None, Y_init=None, kernel=None, n_fmin_samples=1, model_type='GP',
                    n_hidden=[50, 50, 50], bo_method='LCB', batch_option='CL', batch_size=1, seed=42, util_type='se_y',
@@ -109,7 +110,9 @@ class Bayes_opt():
         self.e = np.exp(1)
 
         #  Fit GP model to the data
-        self.model._update_model(self.X, self.Y,seed=self.seed)
+
+        self.model._update_model(self.X, self.Y)
+
 
         for k in range(iterations):
 
@@ -127,9 +130,10 @@ class Bayes_opt():
             self.X = np.vstack((self.X, x_next_batch))
             self.Y = np.vstack((self.Y, y_next_batch))
 
+            file_name = self.saving_path + f"s{self.seed}_itr{k}"
             #  update GP model with new data
             start_time2 = time.time()
-            self.model._update_model(self.X, self.Y, itr=k,seed=self.seed)
+            self.model._update_model(self.X, self.Y, file_name = file_name)
             t_update_model = time.time()- start_time2
             time_record[k,1] =  t_update_model
 

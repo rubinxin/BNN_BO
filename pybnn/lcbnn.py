@@ -51,7 +51,8 @@ def utility(util_type='se_y', Y_train=0):
 def cal_loss(y_true, y_pred, util, H_x, y_pred_samples):
     a = 1.0
     mse_loss = nn.functional.mse_loss(y_pred, y_true)
-    log_condi_gain = torch.log(util(y_pred_samples.detach(), H_x.detach()))
+    # log_condi_gain = torch.log(util(y_pred_samples.detach(), H_x.detach()))
+    log_condi_gain = torch.log(util(y_pred_samples, H_x))
 
     utility_value = a * log_condi_gain.mean()
     calibrated_loss = mse_loss - utility_value
@@ -292,7 +293,7 @@ class LCBNN(BaseModel):
                     # criterion = nn.functional.mse_loss(weight=self.weights)
                     loss =  torch.nn.functional.mse_loss(output, targets)
 
-                loss.backward()
+                loss.backward(retain_graph=True)
                 optimizer.step()
 
                 train_err += loss
@@ -314,7 +315,6 @@ class LCBNN(BaseModel):
             training_loss_np = torch.FloatTensor(training_loss).data.numpy()
             training_loss_all_epoch.append(training_loss_np)
             training_logutil_np = torch.FloatTensor(training_logutil).data.numpy()
-            training_loss_all_epoch.append(training_loss_np)
             training_logutil_all_epoch.append(training_logutil_np)
 
             lc[epoch] = train_err / train_batches
@@ -330,8 +330,8 @@ class LCBNN(BaseModel):
         self.model = network
         self.lc = lc
 
-        train_loss_all_epoch = np.array(training_loss_all_epoch[1:])
-        train_logutil_all_epoch = np.array(training_logutil_all_epoch[1:])
+        train_loss_all_epoch = np.array(training_loss_all_epoch[2:])
+        train_logutil_all_epoch = np.array(training_logutil_all_epoch[2:])
 
         return train_loss_all_epoch, train_logutil_all_epoch
 

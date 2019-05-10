@@ -10,7 +10,8 @@ class LCBNNWarp(BaseModel):
                  n_units=[50, 50, 50],
                  dropout = 0.05, length_scale = 1e-2, T = 1000, util_type='se_y',
                  normalize_input=True, normalize_output=True, seed=42, actv='tanh'):
-        # self.model = \
+
+        self.util_type = util_type
         self.model = LCBNN(batch_size=mini_batch_size,num_epochs=num_epochs,
                  n_units_1=n_units[0], n_units_2=n_units[1], n_units_3=n_units[2],
                  dropout_p = dropout, length_scale = length_scale, T = T,
@@ -20,8 +21,9 @@ class LCBNNWarp(BaseModel):
     def _create_model(self, X, Y):
         Y = Y.flatten()
         train_mes_loss, train_util = self.model.train(X, Y)
+        return train_mes_loss, train_util
 
-    def _update_model(self,  X_all, Y_all, itr=0, seed = None):
+    def _update_model(self,  X_all, Y_all, file_name = None):
         """
         Updates the model with new observations.
         """
@@ -32,9 +34,10 @@ class LCBNNWarp(BaseModel):
         else:
             train_mes_loss, train_util = self.model.train(X_all, Y_all)
 
-        np.save(f'lcbnn_train_mse_loss_i{itr}',train_mes_loss)
-        np.save(f'lcbnn_train_util_i{itr}',train_util)
+        if file_name is not None:
 
+            np.save(f"{file_name}lcbnn_train_mes_loss_{self.util_type}", train_mes_loss)
+            np.save(f"{file_name}lcbnn_train_util_{self.util_type}", train_util)
 
     def predict(self, X):
         """

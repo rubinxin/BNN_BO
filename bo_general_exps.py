@@ -30,13 +30,18 @@ def BNN_BO_Exps(obj_func, model_type, bo_method, batch_option, batch_size,
     Y_query_all_seeds = []
 
     for j in range(seed_size):
+
+        saving_path = 'data_debug/' + obj_func + '/'
+        if not os.path.exists(saving_path):
+            os.makedirs(saving_path)
+
         # specify the random seed and generate observation data
         seed = j
         np.random.seed(seed)
         x_init, y_init = get_init_data(obj_func=f, noise_var=var_noise, n_init =n_init, bounds=x_bounds)
 
         # run Bayesian optimisation:
-        bayes_opt = Bayes_opt(func=f, bounds = x_bounds, noise_var=var_noise)
+        bayes_opt = Bayes_opt(func=f, bounds = x_bounds, noise_var=var_noise, saving_path=saving_path)
         # model_type: GP or MCDROP or DNGO or BOHAM
         bayes_opt.initialise(X_init=x_init, Y_init=y_init, model_type=model_type, bo_method=bo_method,
                              batch_option=batch_option, batch_size=batch_size, seed=seed,  util_type=util_type,
@@ -53,16 +58,12 @@ def BNN_BO_Exps(obj_func, model_type, bo_method, batch_option, batch_size,
         X_query_all_seeds.append(X_query)
         Y_query_all_seeds.append(Y_query)
 
-        saving_path = 'data/' + obj_func
         # saving_path = '/data/engs-bayesian-machine-learning/sedm4615/BNN_BO_data/'  + obj_func
 
-        if not os.path.exists(saving_path):
-            os.makedirs(saving_path)
-
         if model_type == 'LCBNN' or model_type == 'LCCD' :
-            results_file_name = saving_path + '/' + model_type + activation + util_type + bo_method + str(batch_size)
+            results_file_name = saving_path + model_type + activation + util_type + bo_method + str(batch_size)
         else:
-            results_file_name = saving_path + '/' + model_type + activation + bo_method + str(batch_size)
+            results_file_name = saving_path + model_type + activation + bo_method + str(batch_size)
 
         results = {'X_opt': X_opt_all_seeds,
                    'Y_opt': Y_opt_all_seeds,
@@ -86,9 +87,9 @@ if __name__ == '__main__':
     parser.add_argument('-b', '--batch_size', help='BO Batch size. Default = 1',
                         default=1, type=int)
     parser.add_argument('-nitr', '--max_itr', help='Max BO iterations. Default = 40',
-                        default=10, type=int)
+                        default=60, type=int)
     parser.add_argument('-s', '--nseeds', help='Number of random initialisation. Default = 20',
-                        default=10, type=int)
+                        default=3, type=int)
     parser.add_argument('-uo', '--util_opt', help='Utility function type for Loss Calibration: se_yclip, se_y ,Default=se_y',
                         default='se_prod_y', type=str)
     parser.add_argument('-a', '--actv', help='Activation function type: tanh, relu, Default=tanh',
