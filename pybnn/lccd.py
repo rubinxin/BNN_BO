@@ -60,7 +60,8 @@ def cal_loss(y_true, y_pred, util, H_x, y_pred_samples, output, log_var, regular
     else:
         loss = heteroscedastic_loss(y_true, output, log_var) + regularization
     # reg=regularization
-    log_condi_gain = torch.log(util(y_pred_samples.detach(), H_x.detach()))
+    # log_condi_gain = torch.log(util(y_pred_samples.detach(), H_x.detach()))
+    log_condi_gain = torch.log(util(y_pred_samples, H_x))
 
     utility_value = a * log_condi_gain.mean()
     calibrated_loss = loss - utility_value
@@ -367,23 +368,23 @@ class LCCD(BaseModel):
                         loss = heteroscedastic_loss(targets, output, minibatch_log_var)
 
 
-                loss.backward()
+                loss.backward(retain_graph=True)
                 optimizer.step()
 
                 train_err += loss
                 train_batches += 1
 
-            if self.loss_cal and epoch >= (self.lc_burn - 1):
-                mc_samples = [network(inputs) for _ in range(10)]
-                y_pred_samples = torch.stack([tup[0] for tup in mc_samples])
+                if self.loss_cal and epoch >= (self.lc_burn - 1):
+                    mc_samples = [network(inputs) for _ in range(10)]
+                    y_pred_samples = torch.stack([tup[0] for tup in mc_samples])
 
-                if self.util_type == 'se_prod_y':
-                    numerator = torch.sum(y_pred_samples * torch.exp(y_pred_samples),0)
-                    denominator = torch.sum(torch.exp(y_pred_samples),0)
-                    h_x = numerator / denominator
-                else:
-                    y_pred_mean = torch.mean(y_pred_samples, 0)
-                    h_x = y_pred_mean
+                    if self.util_type == 'se_prod_y':
+                        numerator = torch.sum(y_pred_samples * torch.exp(y_pred_samples),0)
+                        denominator = torch.sum(torch.exp(y_pred_samples),0)
+                        h_x = numerator / denominator
+                    else:
+                        y_pred_mean = torch.mean(y_pred_samples, 0)
+                        h_x = y_pred_mean
 
             lc[epoch] = train_err / train_batches
             logging.debug("Epoch {} of {}".format(epoch + 1, self.num_epochs))
