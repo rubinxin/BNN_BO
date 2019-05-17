@@ -24,12 +24,50 @@ def BNN_BO_Exps(obj_func, model_type, bo_method, batch_option, batch_size,
     var_noise = 1.0e-10
     d = x_bounds.shape[0]
     n_init = d*10
-    X_opt_all_seeds = []
-    Y_opt_all_seeds = []
-    X_query_all_seeds = []
-    Y_query_all_seeds = []
 
-    for j in range(seed_size):
+    saving_path = 'data/' + obj_func
+    # saving_path = '/data/engs-bayesian-machine-learning/sedm4615/BNN_BO_data/'  + obj_func
+
+    if not os.path.exists(saving_path):
+        os.makedirs(saving_path)
+
+    if model_type == 'LCBNN' or model_type == 'LCCD':
+        results_file_name = saving_path + '/' + model_type + activation + util_type + bo_method + str(batch_size)
+    else:
+        results_file_name = saving_path + '/' + model_type + activation + bo_method + str(batch_size)
+
+    if os.path.exists(results_file_name):
+        with open(results_file_name, 'rb') as exist_data_filefile2:
+            existing_results = pickle.load(exist_data_filefile2)
+
+        X_opt_all_seeds = existing_results['X_opt']
+        Y_opt_all_seeds = existing_results['Y_opt']
+        X_query_all_seeds = existing_results['X_query']
+        Y_query_all_seeds = existing_results['Y_query']
+        time_all_seeds = existing_results['runtime']
+
+        if isinstance(X_query_all_seeds, list):
+            X_query_all_seeds = X_query_all_seeds
+            Y_query_all_seeds = Y_query_all_seeds
+            time_all_seeds    = time_all_seeds
+        else:
+            X_query_all_seeds = list(X_query_all_seeds)
+            Y_query_all_seeds = list(Y_query_all_seeds)
+            time_all_seeds = list(time_all_seeds)
+
+        s_start = len(Y_opt_all_seeds)
+        print(f"Using existing data from seed{s_start} onwards")
+
+
+    else:
+        s_start = 0
+        X_opt_all_seeds = []
+        Y_opt_all_seeds = []
+        X_query_all_seeds = []
+        Y_query_all_seeds = []
+        time_all_seeds = []
+
+    for j in range(s_start, seed_size):
         # specify the random seed and generate observation data
         seed = j
         np.random.seed(seed)
@@ -52,23 +90,13 @@ def BNN_BO_Exps(obj_func, model_type, bo_method, batch_option, batch_size,
         Y_opt_all_seeds.append(Y_opt)
         X_query_all_seeds.append(X_query)
         Y_query_all_seeds.append(Y_query)
-
-        saving_path = 'data/' + obj_func
-        # saving_path = '/data/engs-bayesian-machine-learning/sedm4615/BNN_BO_data/'  + obj_func
-
-        if not os.path.exists(saving_path):
-            os.makedirs(saving_path)
-
-        if model_type == 'LCBNN' or model_type == 'LCCD' :
-            results_file_name = saving_path + '/' + model_type + activation + util_type + bo_method + str(batch_size)
-        else:
-            results_file_name = saving_path + '/' + model_type + activation + bo_method + str(batch_size)
+        time_all_seeds.append(time_record)
 
         results = {'X_opt': X_opt_all_seeds,
                    'Y_opt': Y_opt_all_seeds,
-                   'X_query': X_query,
-                   'Y_query': Y_query,
-                   'runtime': time_record}
+                   'X_query': X_query_all_seeds,
+                   'Y_query': Y_query_all_seeds,
+                   'runtime': time_all_seeds}
 
         with open(results_file_name, 'wb') as file:
             pickle.dump(results, file)
@@ -78,7 +106,7 @@ if __name__ == '__main__':
     parser.add_argument('-f', '--func', help='Objective function',
                         default='egg-2d', type=str)
     parser.add_argument('-m', '--model', help='Surrogate model: GP or MCDROP or MCCONC or DNGO or BOHAM or LCBNN',
-                        default='LCBNN', type=str)
+                        default='LCCD', type=str)
     parser.add_argument('-acq', '--acq_func', help='Acquisition function: LCB, EI, MES',
                         default='LCB', type=str)
     parser.add_argument('-bm', '--batch_opt', help='Batch option: CL, KB',
