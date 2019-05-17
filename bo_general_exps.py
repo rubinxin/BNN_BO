@@ -31,7 +31,7 @@ def BNN_BO_Exps(obj_func, model_type, bo_method, batch_option, batch_size,
 
     for j in range(seed_size):
 
-        saving_path = 'data_debug/' + obj_func + '/'
+        saving_path = 'data_debug/' + obj_func + activation + '/'
         if not os.path.exists(saving_path):
             os.makedirs(saving_path)
 
