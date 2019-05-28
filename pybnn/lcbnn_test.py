@@ -51,7 +51,6 @@ def utility(util_type='recent', Y_train=0):
             # cond_gain = torch.FloatTensor(u.double())
             cond_gain = u.float()
 
-
         return cond_gain
 
     return util
@@ -390,6 +389,7 @@ class LCBNN(BaseModel):
 
         # Perform MC dropout
         model = self.model
+        model.eval()
         T = self.T
 
         # start_mc=time.time()
