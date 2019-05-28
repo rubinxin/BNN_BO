@@ -11,7 +11,7 @@ from pybnn.base_model import BaseModel
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 
 
-def utility(util_type='se_y', Y_train=0):
+def utility(util_type='recent', Y_train=0):
     '''Inputs:
     y_true: true values (N,D)
     y_pred: predicted values (N,D)
@@ -42,6 +42,15 @@ def utility(util_type='se_y', Y_train=0):
             u_unscaled = - (y_pred_samples - H_x) ** 2 * torch.exp( y_pred_samples)
             cond_gain_unscaled = torch.mean(u_unscaled, 0)
             cond_gain = torch.exp(cond_gain_unscaled) + 1e-8
+
+        elif util_type == 'recent':
+            check_y_recent_in_target = sum([torch.eq(H_x, a) for a in y_pred_samples])
+            u_clip = torch.ones_like(check_y_recent_in_target)
+            u_high_u = 100*torch.ones_like(check_y_recent_in_target)
+            u = torch.where(check_y_recent_in_target >= 1, u_high_u, u_clip)
+            # cond_gain = torch.FloatTensor(u.double())
+            cond_gain = u.float()
+
 
         return cond_gain
 
@@ -308,6 +317,9 @@ class LCBNN(BaseModel):
                         numerator = torch.sum(y_pred_samples * torch.exp(y_pred_samples),0)
                         denominator = torch.sum(torch.exp(y_pred_samples),0)
                         h_x = numerator / denominator
+                    elif self.util_type == 'recent':
+                        h_x = targets
+                        y_pred_samples = torch.FloatTensor(self.y[-5:,0][:,None])
                     else:
                         y_pred_mean = torch.mean(y_pred_samples, 0)
                         h_x = y_pred_mean
