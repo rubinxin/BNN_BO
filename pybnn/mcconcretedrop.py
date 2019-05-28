@@ -352,6 +352,7 @@ class MCCONCRETEDROP(BaseModel):
 
         # Perform MC dropout
         model = self.model
+        model.eval()
         T     = self.T
         # model.eval()
         # MC_samples : list T x N x 1
