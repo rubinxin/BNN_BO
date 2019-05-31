@@ -28,7 +28,7 @@ def utility(util_type='recent', Y_train=0):
 
         elif util_type == 'se_yclip':
             u_unscaled = - (y_pred_samples - H_x) ** 2
-            u_scaled = 10 + torch.exp(u_unscaled)
+            u_scaled = 1 + torch.exp(u_unscaled)
             u_clip = torch.ones_like(y_pred_samples)
             u = torch.where(y_pred_samples < np.mean(Y_train), u_scaled, u_clip)
             cond_gain = torch.mean(u, 0)
@@ -49,8 +49,6 @@ def utility(util_type='recent', Y_train=0):
             u_clip = torch.ones_like(y_pred_samples)
             u = torch.where(y_pred_samples < np.mean(Y_train), u_scaled, u_clip)
             cond_gain = torch.mean(u, 0)
-            # cond_gain_unscaled = torch.mean(u_unscaled, 0)
-            # cond_gain = torch.exp(cond_gain_unscaled) + 1e-8
 
         elif util_type == 'recent':
             check_y_recent_in_target = sum([torch.eq(H_x, a) for a in y_pred_samples])
@@ -59,6 +57,11 @@ def utility(util_type='recent', Y_train=0):
             u = torch.where(check_y_recent_in_target >= 1, u_high_u, u_clip)
             # cond_gain = torch.FloatTensor(u.double())
             cond_gain = u.float()
+
+        elif util_type == 'iteration':
+            # y_pred_samples equals the iteration number for each data point
+            # cond_gain = torch.FloatTensor(u.double())
+            cond_gain = torch.exp(y_pred_samples)
 
         return cond_gain
 
@@ -97,11 +100,19 @@ class Net(nn.Module):
         super(Net, self).__init__()
         self.decay = decay
         self.dropout_p = dropout_p
+        self.n_units = n_units
         self.dropout = nn.Dropout(p=self.dropout_p)
+
         self.fc1 = nn.Linear(n_inputs, n_units[0])
-        self.fc2 = nn.Linear(n_units[0], n_units[1])
-        self.fc3 = nn.Linear(n_units[1], n_units[2])
-        self.out = nn.Linear(n_units[2], 1)
+        # self.fc2 = nn.Linear(n_units[0], n_units[1])
+        # self.fc3 = nn.Linear(n_units[1], n_units[2])
+        # self.out = nn.Linear(n_units[2], 1)
+        # self.fc_hidden1 = [self.fc2, self.fc3]
+        # self.fc1 = nn.Linear(n_inputs, n_units[0])
+        # self.fc_hidden = []
+        # for i in range(len(self.n_units) - 1):
+        #     self.fc_hidden.append(nn.Linear(n_units[i], n_units[i+1]))
+        self.out = nn.Linear(n_units[-1], 1)
         if actv == 'relu':
             self.activation = nn.ReLU()
         else:
@@ -110,13 +121,19 @@ class Net(nn.Module):
     def forward(self, x):
 
         x = self.activation(self.fc1(x))
+        #
+        # for i in range(len(self.n_units)-1):
+        #     x = self.dropout(x)
+        #     x = self.activation(self.fc_hidden[i](x))
         x = self.dropout(x)
+        # x = self.dropout(x)
+        #
+        # x = self.activation(self.fc_hidden[0](x))
+        # x = self.dropout(x)
+        #
+        # x = self.activation(self.fc_hidden[1](x))
+        # x = self.dropout(x)
 
-        x = self.activation(self.fc2(x))
-        x = self.dropout(x)
-
-        x = self.activation(self.fc3(x))
-        x = self.dropout(x)
 
         return self.out(x)
 
@@ -125,7 +142,7 @@ class LCBNN(BaseModel):
 
     def __init__(self, batch_size=10, num_epochs=500,
                  learning_rate=0.01,
-                 adapt_epoch=5000, n_units_1=50, n_units_2=50, n_units_3=50,
+                 adapt_epoch=5000, n_units=[50, 50, 50],
                  dropout_p=0.05, length_scale = 1e-1, weight_decay = 1e-6, T = 100,
                  normalize_input=True, normalize_output=True, rng=None, weights=None,
                  loss_cal=True, lc_burn=1, util_type='se_y',gpu=True, actv='tanh'):
@@ -187,9 +204,9 @@ class LCBNN(BaseModel):
         self.batch_size = batch_size
         self.init_learning_rate = learning_rate
 
-        self.n_units_1 = n_units_1
-        self.n_units_2 = n_units_2
-        self.n_units_3 = n_units_3
+        self.n_units_list = n_units
+        # self.n_units_2 = n_units_2
+        # self.n_units_3 = n_units_3
         self.adapt_epoch = adapt_epoch  # TODO check
         self.network = None
         self.models = []
@@ -243,7 +260,7 @@ class LCBNN(BaseModel):
         features = X.shape[1]
 
         network = Net(n_inputs=features, dropout_p=self.dropout_p, decay= self.decay,
-                      n_units=[self.n_units_1, self.n_units_2, self.n_units_3], actv=self.actv)
+                      n_units=self.n_units_list, actv=self.actv)
 
         # optimizer = optim.Adam(network.parameters(),
         #                        lr=self.init_learning_rate,
@@ -254,10 +271,11 @@ class LCBNN(BaseModel):
         if itr > 0:
             model_loading_path = os.path.join(saving_path,
                                               f'lcbnn_k={itr-1}_{self.actv}_{self.util_type}_'
-                                              f'n{self.n_units_1}_e{self.num_epochs}.pt')
+                                              f'e{self.num_epochs}.pt')
             network.load_state_dict(torch.load(model_loading_path))
             # network.eval()
             network.train()
+
 
         if self.gpu:
             network = network.to(self.device)
@@ -315,13 +333,16 @@ class LCBNN(BaseModel):
                     y_pred_samples = [network(inputs) for _ in range(10)]
                     y_pred_samples = torch.stack(y_pred_samples)
 
-                    if self.util_type == 'se_prod_y' or self.util_type == 'se_prod_yclip':
+                    if self.util_type == 'se_prod_y':
                         numerator = torch.sum(y_pred_samples * torch.exp(y_pred_samples),0)
                         denominator = torch.sum(torch.exp(y_pred_samples),0)
                         h_x = numerator / denominator
                     elif self.util_type == 'recent':
                         h_x = targets
                         y_pred_samples = torch.FloatTensor(self.y[-n_per_itr:,0][:,None])
+                    elif self.util_type == 'iteration':
+                        h_x = targets
+                        y_pred_samples = inputs[:,-1]
                     else:
                         y_pred_mean = torch.mean(y_pred_samples, 0)
                         h_x = y_pred_mean
@@ -346,7 +367,7 @@ class LCBNN(BaseModel):
         # Saving models
         model_saving_path = os.path.join(saving_path,
                                          f'lcbnn_k={itr}_{self.actv}_{self.util_type}_'
-                                         f'n{self.n_units_1}_e{self.num_epochs}.pt')
+                                         f'e{self.num_epochs}.pt')
         torch.save(network.state_dict(), model_saving_path)
         print('lcbnn model saved')
 

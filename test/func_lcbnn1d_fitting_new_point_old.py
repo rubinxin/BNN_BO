@@ -3,26 +3,44 @@ import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 from exps_tasks.math_functions import get_function
-from pybnn.mcdrop import MCDROP
-from pybnn.mcconcretedrop import MCCONCRETEDROP
+from pybnn.mcdrop_test import MCDROP
 from pybnn.lcbnn_test import LCBNN
-from pybnn.lccd import LCCD
 import time
 from matplotlib import cm
 import argparse
+import os
 
-func_name='gramcy1D'
+func_name='gramcy1D_old'
 def f(x_0):
     x = 2*x_0 + 0.5
     return (np.sin(x * 4 * np.pi) / (2*x) + (x-1)**4)-4
 
-def fitting_new_points_1D(n_units, num_epochs, seed, T, length_scale, n_init, mc_tau, regul):
+def fitting_new_points_1D(n_units, num_epochs, seed, T, length_scale, n_init, mc_tau, regul, warm_start):
     print(f'{func_name}: seed={seed}')
+
+    saving_path = f'../data_debug/{func_name}/'
+    if not os.path.exists(saving_path):
+        os.makedirs(saving_path)
+
+    saving_model_path = os.path.join(saving_path,
+                                 'saved_model/')
+    if not os.path.exists(saving_model_path):
+        os.makedirs(saving_model_path)
+
+    act_func = 'relu'
+    # act_func = 'tanh'
+
+    saving_loss_path = os.path.join(saving_path,
+                                 f'{act_func}/')
+    if not os.path.exists(saving_loss_path):
+        os.makedirs(saving_loss_path)
+
+    save_loss = True
     display_time = True
     dropout = 0.05
     weight_decay = 1e-6
     n_per_update = 5
-    total_itr = 3
+    total_itr = 5
     np.random.seed(seed)
     x_grid = np.linspace(0, 1, 100)[:, None]
     fvals = f(x_grid)
@@ -36,20 +54,30 @@ def fitting_new_points_1D(n_units, num_epochs, seed, T, length_scale, n_init, mc
 
     for k in range(total_itr):
 
+        if warm_start:
+            itr_k = k
+        else:
+            itr_k = 0
 
         # -- Train and Prediction with MC Dropout Model ---
         start_train_time_mc = time.time()
         model_mcdrop = MCDROP(num_epochs=num_epochs,n_units_1=n_units, n_units_2=n_units, n_units_3=n_units,
-                              weight_decay=weight_decay, length_scale=length_scale, T=T, rng=seed)
-        model_mcdrop.train(x, y.flatten())
+                              dropout_p=dropout,weight_decay=weight_decay, length_scale=length_scale,
+                              T=T, rng=seed, actv=act_func)
+        # Train
+        mcdrop_train_mse_loss = model_mcdrop.train(x, y.flatten(), itr=itr_k, saving_path=saving_model_path)
         train_time_mc = time.time() - start_train_time_mc
         start_predict_time_mc = time.time()
         m_mcdrop, v_mcdrop = model_mcdrop.predict(x_grid)
+        # Predict
         predict_time_mc = time.time() - start_predict_time_mc
 
+        if save_loss:
+            mcdrop_loss_saving_path = os.path.join(saving_loss_path,
+                                                   f"mcdrop_train_mes_loss_s{seed}_itr{k}_n{n_units}_e{num_epochs}")
+            np.save(mcdrop_loss_saving_path, mcdrop_train_mse_loss)
 
         # -- Train and Prediction with LCBNN with MC Dropout mode and Se_y Util ---
-        start_train_time_lcbnn = time.time()
         util_set = ['recent']
         m_lcbnn_set = []
         v_lcbnn_set = []
@@ -57,14 +85,28 @@ def fitting_new_points_1D(n_units, num_epochs, seed, T, length_scale, n_init, mc
         lcbnn_pred_time = []
 
         for u in util_set:
+            start_train_time_lcbnn = time.time()
             model_lcbnn_u = LCBNN(num_epochs=num_epochs,n_units_1=n_units, n_units_2=n_units, n_units_3=n_units,
-                                   weight_decay=weight_decay, length_scale=length_scale, T=T, util_type=u, rng=seed)
-            model_lcbnn_u.train(x, y.flatten())
+                                   weight_decay=weight_decay, length_scale=length_scale, T=T, util_type=u, rng=seed,
+                                  actv=act_func)
+            # Train
+            lcbnn_train_mse_loss, lcbnn_train_logutil = \
+                model_lcbnn_u.train(x, y.flatten(), itr=itr_k, n_per_itr=n_per_update, saving_path=saving_model_path)
+
             train_time_lcbnn = time.time() - start_train_time_lcbnn
 
             start_predict_time_lcbnn= time.time()
+            # Predict
             m_lcbnn_u, v_lcbnn_u = model_lcbnn_u.predict(x_grid)
             predict_time_lcbnn = time.time() - start_predict_time_lcbnn
+
+            if save_loss:
+                lcbnn_loss_saving_path = os.path.join(saving_loss_path,
+                                                       f"lcbnn_train_mes_loss_{u}_s{seed}_itr{k}_n{n_units}_e{num_epochs}")
+                lcbnn_logutil_saving_path = os.path.join(saving_loss_path,
+                                                       f"lcbnn_train_logutil_{u}_s{seed}_itr{k}_n{n_units}_e{num_epochs}")
+                np.save(lcbnn_loss_saving_path, lcbnn_train_mse_loss)
+                np.save(lcbnn_logutil_saving_path, lcbnn_train_logutil)
 
             m_lcbnn_set.append(m_lcbnn_u)
             v_lcbnn_set.append(v_lcbnn_u)
@@ -106,11 +148,12 @@ def fitting_new_points_1D(n_units, num_epochs, seed, T, length_scale, n_init, mc
         x     = np.vstack((x_old,x_new))
         y     = np.vstack((y_old,y_new))
 
-    # plt.show()
-    path = 'figures_compare/lcbnn' + func_name + 'n_init='+ str(n_init)+'_l=1e-1_seed' + str(seed) + '_nunits=' + \
-           str(n_units) + '_nepochs=' + str(num_epochs) + '_wd=' + str(weight_decay) + \
-            '_dropout=' + str(dropout) + '_regul=' + str(regul) + '_mc_tau=' + str(mc_tau)
-    figure.savefig(path + ".pdf", bbox_inches='tight')
+    plt.show()
+
+    fig_save_path = os.path.join(saving_path, f's{seed}_lcbnn_warm_{warm_start}_{func_name}_nunits={n_units}' \
+           f'_nepochs={num_epochs}_n_init={n_init}_act={act_func}_l=1e-1_total_itr_{total_itr}')
+
+    figure.savefig(fig_save_path + ".pdf", bbox_inches='tight')
 
     if display_time:
         for m, train_t, predict_t in zip(subplot_titles, train_time, predict_time):
@@ -121,9 +164,9 @@ if __name__ == '__main__':
     parser.add_argument('-n', '--n_units', help='Number of neurons per layer',
                         default=10, type=int)
     parser.add_argument('-e', '--n_epochs', help='Number of training epoches',
-                        default=500, type=int)
+                        default=200, type=int)
     parser.add_argument('-s', '--seed', help='Random seeds [0,6,11,12,13,23,29]',
-                        default=0, type=int)
+                        default=42, type=int)
     parser.add_argument('-t', '--samples', help='MC samples for prediction',
                         default=100, type=int)
     parser.add_argument('-l', '--ls', help='length scale value',
@@ -134,6 +177,8 @@ if __name__ == '__main__':
                         default=False, type=bool)
     parser.add_argument('-r', '--regul', help='Add regularisation to training losses',
                         default=False, type=bool)
+    parser.add_argument('-c', '--continue_training', help='Cold start (False) or Warm start (True)',
+                        default=True, type=bool)
 
     args = parser.parse_args()
     print(f"Got arguments: \n{args}")
@@ -145,7 +190,8 @@ if __name__ == '__main__':
     n_init = args.n_init
     mc_tau = args.mc_tau
     regul = args.regul
+    warm = args.continue_training
 
     fitting_new_points_1D(n_units=n_units, num_epochs=n_epochs, seed=s, T=T,
-                          length_scale=ls, n_init=n_init, mc_tau = mc_tau, regul = regul)
+                          length_scale=ls, n_init=n_init, mc_tau = mc_tau, regul = regul, warm_start = warm)
 
