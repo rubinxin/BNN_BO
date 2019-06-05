@@ -19,36 +19,49 @@ def utility(util_type='recent', Y_train=0):
     y_ob: training data
     '''
 
-    def util(y_pred_samples, H_x):
+    def util(y_pred_samples, H_x, y_true_batch):
 
+        threshold = np.mean(Y_train)
+        # threshold = np.percentile(Y_train, 50)
+
+        # elif util_type == 'se_prod_yclip':
+        #     u_unscaled = - (y_pred_samples - H_x) ** 2 * torch.exp(y_pred_samples)
+        #     u_scaled = 1 + torch.exp(u_unscaled)
+        #     u_clip = torch.ones_like(y_pred_samples)
+        #     u = torch.where(y_true_batch < threshold, u_scaled, u_clip)
+        #     cond_gain = torch.mean(u, 0)
         if util_type == 'se_y':
-            u = - (y_pred_samples - H_x) ** 2 - y_pred_samples
-            cond_gain_unscaled = torch.mean(u, 0)
+            cond_gain_unscaled = 1 - (y_true_batch - H_x) ** 2 - y_true_batch
             cond_gain = torch.exp(cond_gain_unscaled) + 1e-8
 
+        # elif util_type == 'se_yclip':
+        #     u_unscaled = - (y_pred_samples - H_x) ** 2 - y_pred_samples
+        #     u_scaled = 1 + torch.exp(u_unscaled)
+        #     u_clip = torch.ones_like(y_pred_samples)
+        #     u = torch.where(y_true_batch < threshold, u_scaled, u_clip)
+        #     cond_gain = torch.mean(u, 0)
+        #
         elif util_type == 'se_yclip':
-            u_unscaled = - (y_pred_samples - H_x) ** 2
+            u_unscaled = - (y_true_batch - H_x) ** 2 + torch.exp(-y_true_batch)
             u_scaled = 1 + torch.exp(u_unscaled)
-            u_clip = torch.ones_like(y_pred_samples)
-            u = torch.where(y_pred_samples < np.mean(Y_train), u_scaled, u_clip)
-            cond_gain = torch.mean(u, 0)
+            u_clip = torch.ones_like(y_true_batch)
+            cond_gain = torch.where(y_true_batch < threshold, u_scaled, u_clip)
+
+        elif util_type == 'se_prod_yclip':
+            u_unscaled = - (y_true_batch - H_x) ** 2 * torch.exp( y_true_batch) + torch.exp(-y_true_batch)
+            u_scaled = 1 + torch.exp(u_unscaled)
+            u_clip = torch.ones_like(y_true_batch)
+            cond_gain = torch.where(y_true_batch < threshold, u_scaled, u_clip)
 
         elif util_type == 'exp_se_y':
-            u = - (y_pred_samples - H_x) ** 2 - y_pred_samples
+            u = torch.exp(- (y_pred_samples - H_x) ** 2 - y_pred_samples)
             cond_gain_unscaled = torch.mean(u, 0)
-            cond_gain = torch.exp(torch.exp(cond_gain_unscaled) + 1e-8)
+            cond_gain = torch.exp(cond_gain_unscaled) + 1e-8
 
         elif util_type == 'se_prod_y':
             u_unscaled = - (y_pred_samples - H_x) ** 2 * torch.exp( y_pred_samples)
             cond_gain_unscaled = torch.mean(u_unscaled, 0)
             cond_gain = torch.exp(cond_gain_unscaled) + 1e-8
-
-        elif util_type == 'se_prod_yclip':
-            u_unscaled = - (y_pred_samples - H_x) ** 2 * torch.exp( y_pred_samples)
-            u_scaled = 1 + torch.exp(u_unscaled)
-            u_clip = torch.ones_like(y_pred_samples)
-            u = torch.where(y_pred_samples < np.mean(Y_train), u_scaled, u_clip)
-            cond_gain = torch.mean(u, 0)
 
         elif util_type == 'recent':
             check_y_recent_in_target = sum([torch.eq(H_x, a) for a in y_pred_samples])
@@ -58,26 +71,21 @@ def utility(util_type='recent', Y_train=0):
             # cond_gain = torch.FloatTensor(u.double())
             cond_gain = u.float()
 
-        elif util_type == 'iteration':
-            # y_pred_samples equals the iteration number for each data point
-            # cond_gain = torch.FloatTensor(u.double())
-            cond_gain = torch.exp(y_pred_samples)
-
         return cond_gain
 
     return util
 
 
-def cal_loss(y_true, y_pred, util, H_x, y_pred_samples):
+def cal_loss(y_true, y_pred, util, H_x, y_pred_samples, y_true_batch):
     a = 1.0
     mse_loss = nn.functional.mse_loss(y_pred, y_true)
     # log_condi_gain = torch.log(util(y_pred_samples.detach(), H_x.detach()))
-    log_condi_gain = torch.log(util(y_pred_samples, H_x))
+    log_condi_gain = torch.log(util(y_pred_samples, H_x, y_true_batch))
 
     utility_value = a * log_condi_gain.mean()
     calibrated_loss = mse_loss - utility_value
 
-    return calibrated_loss, mse_loss
+    return calibrated_loss, mse_loss, log_condi_gain
 
 
 
@@ -109,9 +117,9 @@ class Net(nn.Module):
         # self.out = nn.Linear(n_units[2], 1)
         # self.fc_hidden1 = [self.fc2, self.fc3]
         # self.fc1 = nn.Linear(n_inputs, n_units[0])
-        # self.fc_hidden = []
-        # for i in range(len(self.n_units) - 1):
-        #     self.fc_hidden.append(nn.Linear(n_units[i], n_units[i+1]))
+        self.fc_hidden = []
+        for i in range(len(self.n_units) - 1):
+            self.fc_hidden.append(nn.Linear(n_units[i], n_units[i+1]))
         self.out = nn.Linear(n_units[-1], 1)
         if actv == 'relu':
             self.activation = nn.ReLU()
@@ -121,10 +129,10 @@ class Net(nn.Module):
     def forward(self, x):
 
         x = self.activation(self.fc1(x))
-        #
-        # for i in range(len(self.n_units)-1):
-        #     x = self.dropout(x)
-        #     x = self.activation(self.fc_hidden[i](x))
+
+        for i in range(len(self.n_units)-1):
+            x = self.dropout(x)
+            x = self.activation(self.fc_hidden[i](x))
         x = self.dropout(x)
         # x = self.dropout(x)
         #
@@ -273,9 +281,6 @@ class LCBNN(BaseModel):
                                               f'lcbnn_k={itr-1}_{self.actv}_{self.util_type}_'
                                               f'e{self.num_epochs}.pt')
             network.load_state_dict(torch.load(model_loading_path))
-            # network.eval()
-            network.train()
-
 
         if self.gpu:
             network = network.to(self.device)
@@ -288,7 +293,9 @@ class LCBNN(BaseModel):
 
         train_mse_loss_all_epoch = []
         train_logutil_all_epoch = []
-
+        y_utils = np.zeros_like(self.y)
+        y_utils_counts = np.zeros_like(self.y)
+        network.train()
         for epoch in range(self.num_epochs):
 
             epoch_start_time = time.time()
@@ -315,7 +322,11 @@ class LCBNN(BaseModel):
                     loss = torch.nn.functional.mse_loss(output, targets)
 
                 if self.loss_cal and epoch >= self.lc_burn:
-                    loss, mse_loss = cal_loss(targets, output, util, h_x, y_pred_samples)
+                    loss, mse_loss, log_condi_gain = cal_loss(targets, output, util, h_x, y_pred_samples, targets)
+                    for i in range(len(batch[0])):
+                        batch_point_idx = np.where(self.y == batch[1][i])
+                        y_utils[batch_point_idx] += log_condi_gain.cpu().data.numpy()[i]
+                        y_utils_counts[batch_point_idx] += 1
                 else:
                     loss =  torch.nn.functional.mse_loss(output, targets)
                     mse_loss = torch.zeros_like(loss)
@@ -323,8 +334,8 @@ class LCBNN(BaseModel):
                 loss.backward(retain_graph=True)
                 optimizer.step()
 
-                train_err += loss.data.numpy()
-                train_mse += mse_loss.data.numpy()
+                train_err += loss.cpu().cpu().data.numpy()
+                train_mse += mse_loss.cpu().cpu().data.numpy()
 
                 train_batches += 1
 
@@ -372,11 +383,11 @@ class LCBNN(BaseModel):
         print('lcbnn model saved')
 
         self.lc = lc
-
+        y_utils_average          = y_utils / y_utils_counts
         train_mse_loss_all_epoch = np.array(train_mse_loss_all_epoch[2:])
         train_logutil_all_epoch = np.array(train_logutil_all_epoch[2:])
 
-        return train_mse_loss_all_epoch, train_logutil_all_epoch
+        return train_mse_loss_all_epoch, train_logutil_all_epoch, y_utils_average
 
     def iterate_minibatches(self, inputs, targets, batchsize, shuffle=False):
         assert inputs.shape[0] == targets.shape[0], \

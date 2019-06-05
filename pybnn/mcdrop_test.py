@@ -174,11 +174,11 @@ class MCDROP(BaseModel):
                                               f'mcdrop_k={itr-1}_{self.actv}_n{self.n_units_1}_e{self.num_epochs}.pt')
             network.load_state_dict(torch.load(model_loading_path))
             # network.eval()
-            network.train()
-
 
         # Start training
         lc = np.zeros([self.num_epochs])
+        network.train()
+
         for epoch in range(self.num_epochs):
 
             epoch_start_time = time.time()
@@ -202,7 +202,7 @@ class MCDROP(BaseModel):
                 loss.backward()
                 optimizer.step()
 
-                train_err += loss.data.numpy()
+                train_err += loss.cpu().data.numpy()
                 train_batches += 1
 
             lc[epoch] = train_err / train_batches

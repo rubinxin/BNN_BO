@@ -19,12 +19,10 @@ class Net(nn.Module):
         self.dropout = nn.Dropout(p=self.dropout_p)
         self.n_units = n_units
         self.fc1 = nn.Linear(n_inputs, n_units[0])
-        # self.fc_hidden = []
-        # for i in range(len(self.n_units) - 1):
-        #     self.fc_hidden.append(nn.Linear(n_units[i], n_units[i+1]))
+        self.fc_hidden = []
+        for i in range(len(self.n_units) - 1):
+            self.fc_hidden.append(nn.Linear(n_units[i], n_units[i+1]))
         self.out = nn.Linear(n_units[-1], 1)
-
-
         if actv == 'relu':
             self.activation = nn.ReLU()
         else:
@@ -34,10 +32,10 @@ class Net(nn.Module):
     def forward(self, x):
 
         x = self.activation(self.fc1(x))
-        #
-        # for i in range(len(self.n_units)-1):
-        #     x = self.dropout(x)
-        #     x = self.activation(self.fc_hidden[i](x))
+
+        for i in range(len(self.n_units)-1):
+            x = self.dropout(x)
+            x = self.activation(self.fc_hidden[i](x))
 
         x = self.dropout(x)
         return self.out(x)
@@ -174,9 +172,10 @@ class MCDROP(BaseModel):
                                               f'mcdrop_k={itr-1}_{self.actv}_e{self.num_epochs}.pt')
             network.load_state_dict(torch.load(model_loading_path))
             # network.eval()
-            network.train()
+            # network.train()
 
         # Start training
+        network.train()
         lc = np.zeros([self.num_epochs])
         for epoch in range(self.num_epochs):
 
@@ -201,7 +200,7 @@ class MCDROP(BaseModel):
                 loss.backward()
                 optimizer.step()
 
-                train_err += loss.data.numpy()
+                train_err += loss.cpu().data.numpy()
                 train_batches += 1
 
             lc[epoch] = train_err / train_batches

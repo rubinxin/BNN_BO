@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
+from matplotlib import gridspec
 from exps_tasks.math_functions import get_function
 from pybnn.mcdrop_test import MCDROP
 from pybnn.lcbnn_test import LCBNN
@@ -19,9 +20,11 @@ if func_name=='gramcy1D_yval':
 elif func_name == 'modified_sin1D':
     def f(x_0):
         x = (7.5  - 2.7) * x_0 + 2.7
-        return (np.sin(x) + np.sin(10/3 * x))
+        f = (np.sin(x) + np.sin(10/3 * x))
+        y = 3/4*f + 1/4
+        return y
 
-def fitting_new_points_1D(n_units, num_epochs, seed, T, length_scale, n_init, mc_tau, regul, warm_start):
+def fitting_new_points_1D(n_units, num_epochs, seed, T, length_scale, n_init, mc_tau, regul, warm_start, util_str):
     print(f'{func_name}: seed={seed}')
 
     saving_path = f'../data_debug/{func_name}/'
@@ -41,11 +44,11 @@ def fitting_new_points_1D(n_units, num_epochs, seed, T, length_scale, n_init, mc
     if not os.path.exists(saving_loss_path):
         os.makedirs(saving_loss_path)
 
-    save_loss = False
+    save_loss = True
     display_time = True
-    dropout = 0.01
+    dropout = 0.05
     weight_decay = 1e-6
-    n_per_update = 3
+    n_per_update = 5
     total_itr = 4
     np.random.seed(seed)
     x_grid = np.linspace(0, 1, 100)[:, None]
@@ -66,7 +69,9 @@ def fitting_new_points_1D(n_units, num_epochs, seed, T, length_scale, n_init, mc
     x     = np.copy(x_old)
     y     = np.copy(y_old)
 
-    figure, axes = plt.subplots(2, total_itr, figsize=(20, 10))
+    figure, axes = plt.subplots(3, total_itr, figsize=(25, 10),  gridspec_kw={'height_ratios': [2, 2, 1]},sharex=True)
+    # figure = plt.subplots(figsize=(20, 10))
+    # axes = gridspec.GridSpec(3, total_itr, height_ratios=[2, 2, 1])
 
     for k in range(total_itr):
 
@@ -79,7 +84,7 @@ def fitting_new_points_1D(n_units, num_epochs, seed, T, length_scale, n_init, mc
         start_train_time_mc = time.time()
         model_mcdrop = MCDROP(num_epochs=num_epochs,n_units_1=n_units, n_units_2=n_units, n_units_3=n_units,
                               dropout_p=dropout,weight_decay=weight_decay, length_scale=length_scale,
-                              T=T, rng=seed, actv=act_func)
+                              T=T, rng=seed, actv=act_func, normalize_input=False, normalize_output=False)
         # Train
         mcdrop_train_mse_loss = model_mcdrop.train(x, y.flatten(), itr=itr_k, saving_path=saving_model_path)
         train_time_mc = time.time() - start_train_time_mc
@@ -94,8 +99,8 @@ def fitting_new_points_1D(n_units, num_epochs, seed, T, length_scale, n_init, mc
             np.save(mcdrop_loss_saving_path, mcdrop_train_mse_loss)
 
         # -- Train and Prediction with LCBNN with MC Dropout mode and Se_y Util ---
-        util_set = ['se_prod_yclip']
-        # util_set = ['se_yclip']
+        # util_set = ['se_prod_yclip']
+        util_set = [util_str]
 
         m_lcbnn_set = []
         v_lcbnn_set = []
@@ -106,9 +111,9 @@ def fitting_new_points_1D(n_units, num_epochs, seed, T, length_scale, n_init, mc
             start_train_time_lcbnn = time.time()
             model_lcbnn_u = LCBNN(num_epochs=num_epochs,n_units_1=n_units, n_units_2=n_units, n_units_3=n_units,
                                    weight_decay=weight_decay, length_scale=length_scale, T=T, util_type=u, rng=seed,
-                                  actv=act_func,dropout_p=dropout)
+                                  actv=act_func,dropout_p=dropout, normalize_input=False, normalize_output=False)
             # Train
-            lcbnn_train_mse_loss, lcbnn_train_logutil = \
+            lcbnn_train_mse_loss, lcbnn_train_logutil, log_gain_average = \
                 model_lcbnn_u.train(x, y.flatten(), itr=itr_k, n_per_itr=n_per_update, saving_path=saving_model_path)
 
             train_time_lcbnn = time.time() - start_train_time_lcbnn
@@ -145,18 +150,47 @@ def fitting_new_points_1D(n_units, num_epochs, seed, T, length_scale, n_init, mc
             x_grid_plot = x_grid.flatten()
             m = pred_means[i].flatten()
             v = pred_var[i].flatten()
+            bar_width = 0.003
+            opaticity = 0.6
             axes[i, k].plot(x_grid_plot, fvals, "k--")
+            axes[i, k].plot(x_grid_plot, np.mean(y) * np.ones_like(fvals), "g--")
 
             if k > 0:
                 axes[i, k].plot(x_old, y_old, "ko")
                 axes[i, k].plot(x_new, y_new, "r^")
+                axes_loggain = axes[-1, k]
+                axes_loggain.set_title(f'log gain {u}')
+                # log_gain_average_off = log_gain_average + 0.05
+                log_gain_average_off = log_gain_average
+                axes_loggain.bar(x_old.flatten(), log_gain_average_off.flatten()[:-n_per_update],
+                                 bar_width, alpha=opaticity, color='g', edgecolor='g')
+                axes_loggain.bar(x_new.flatten(), log_gain_average_off.flatten()[-n_per_update],
+                                 bar_width, alpha=opaticity, color='r',edgecolor='r')
+                log_gain_average_pos = log_gain_average_off[np.where(log_gain_average_off>0)]
+                axes_loggain.set_ylim([np.min(log_gain_average_pos)-0.05, np.max(log_gain_average_pos)+0.05])
+
+                # axes_loggain.set_ylim([0, 1])
             else:
                 axes[i, k].plot(x_old, y_old, "r^")
+                axes_loggain = axes[-1, k]
+                axes_loggain.set_title(f'log gain {u}')
+                # log_gain_average_off = log_gain_average + 0.05
+                log_gain_average_off = log_gain_average
+
+                axes_loggain.bar(x.flatten(), log_gain_average_off.flatten(), bar_width, alpha=opaticity, color='r',
+                                 edgecolor='r')
+                log_gain_average_pos = log_gain_average_off[np.where(log_gain_average_off>0)]
+                axes_loggain.set_ylim([np.min(log_gain_average_pos)-0.05, np.max(log_gain_average_pos)+0.05])
 
             axes[i, k].plot(x_grid_plot, pred_means[i], "blue")
             axes[i, k].fill_between(x_grid_plot, m + np.sqrt(v), m - np.sqrt(v), color="blue", alpha=0.2)
             axes[i, k].set_title(subplot_titles[i])
+            axes[i, k].set_ylabel('y')
             plt.grid()
+
+        # bar plot for log conditional gain for each data point averaged over all epoches
+        # axes_loggain = axes[-1, k].twinx()
+
 
         x_old = np.copy(x)
         y_old = np.copy(y)
@@ -168,9 +202,10 @@ def fitting_new_points_1D(n_units, num_epochs, seed, T, length_scale, n_init, mc
         x     = np.vstack((x_old,x_new))
         y     = np.vstack((y_old,y_new))
 
+    plt.tight_layout()
     plt.show()
 
-    fig_save_path = os.path.join(saving_path, f's{seed}_lcbnn_warm_{warm_start}_{func_name}_nunits={n_units}' \
+    fig_save_path = os.path.join(saving_path, f'util{u}_s{seed}_lcbnn_warm_{warm_start}_{func_name}_nunits={n_units}' \
            f'_nepochs={num_epochs}_n_init={n_init}_act={act_func}_l=1e-1_total_itr_{total_itr}')
     if save_loss:
         figure.savefig(fig_save_path + ".pdf", bbox_inches='tight')
@@ -184,7 +219,7 @@ if __name__ == '__main__':
     parser.add_argument('-n', '--n_units', help='Number of neurons per layer',
                         default=5, type=int)
     parser.add_argument('-e', '--n_epochs', help='Number of training epoches',
-                        default=500, type=int)
+                        default=800, type=int)
     parser.add_argument('-s', '--seed', help='Random seeds [0,6,11,12,13,23,29]',
                         default=42, type=int)
     parser.add_argument('-t', '--samples', help='MC samples for prediction',
@@ -199,6 +234,8 @@ if __name__ == '__main__':
                         default=False, type=bool)
     parser.add_argument('-c', '--continue_training', help='Cold start (False) or Warm start (True)',
                         default=True, type=bool)
+    parser.add_argument('-u', '--utility_type', help='Utlity function type',
+                        default='se_yclip', type=str)
 
     args = parser.parse_args()
     print(f"Got arguments: \n{args}")
@@ -211,7 +248,9 @@ if __name__ == '__main__':
     mc_tau = args.mc_tau
     regul = args.regul
     warm = args.continue_training
+    util = args.utility_type
 
     fitting_new_points_1D(n_units=n_units, num_epochs=n_epochs, seed=s, T=T,
-                          length_scale=ls, n_init=n_init, mc_tau = mc_tau, regul = regul, warm_start = warm)
+                          length_scale=ls, n_init=n_init, mc_tau = mc_tau, regul = regul, warm_start = warm,
+                          util_str=util)
 
