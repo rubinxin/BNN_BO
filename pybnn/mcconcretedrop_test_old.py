@@ -83,7 +83,7 @@ class Net(nn.Module):
         self.linear2 = nn.Linear(n_units[0], n_units[1])
         self.linear3 = nn.Linear(n_units[1], n_units[2])
         self.out_mu = nn.Linear(n_units[2], 1)
-        self.out_logvar = nn.Linear(n_units[2], 1)
+        # self.out_logvar = nn.Linear(n_units[2], 1)
 
         self.conc_drop1 = ConcreteDropout(weight_regularizer=weight_regularizer,
                                           dropout_regularizer=dropout_regularizer)
@@ -93,8 +93,8 @@ class Net(nn.Module):
                                           dropout_regularizer=dropout_regularizer)
         self.conc_drop_mu = ConcreteDropout(weight_regularizer=weight_regularizer,
                                             dropout_regularizer=dropout_regularizer)
-        self.conc_drop_logvar = ConcreteDropout(weight_regularizer=weight_regularizer,
-                                                dropout_regularizer=dropout_regularizer)
+        # self.conc_drop_logvar = ConcreteDropout(weight_regularizer=weight_regularizer,
+        #                                         dropout_regularizer=dropout_regularizer)
 
         if actv == 'relu':
             self.activation = nn.ReLU()
@@ -111,9 +111,8 @@ class Net(nn.Module):
         x3, regularization[1] = self.conc_drop3(x2, nn.Sequential(self.linear3, self.activation))
 
         mean, regularization[2] = self.conc_drop_mu(x3, self.out_mu)
-        log_var, regularization[3] = self.conc_drop_logvar(x3, self.out_logvar)
-
-        return mean, log_var, regularization.sum()
+        # log_var, regularization[3] = self.conc_drop_logvar(x3, self.out_logvar)
+        return mean, regularization.sum()
     #     # return mean, regularization.sum()
 
 class MCCONCRETEDROP(BaseModel):
@@ -264,22 +263,22 @@ class MCCONCRETEDROP(BaseModel):
                     targets = targets.to(self.device)
 
                 optimizer.zero_grad()
-                output, log_var, regularization = network(inputs)
+                output, regularization = network(inputs)
 
-                # # Estimate log_var empirically
-                # if self.mc_tau:
-                #     minbatch_samples = [network(inputs) for _ in range(self.T)]
-                #     y_minibatch_predict_samples = torch.stack([tup[0] for tup in minbatch_samples])
-                #     minibatch_var = torch.mean(torch.mean((y_minibatch_predict_samples - targets)**2,0))
-                # else:
-                #     minibatch_var = torch.mean((output - targets)**2)
-                #
-                # minibatch_log_var = torch.log(minibatch_var)
+                # Estimate log_var empirically
+                if self.mc_tau:
+                    minbatch_samples = [network(inputs) for _ in range(self.T)]
+                    y_minibatch_predict_samples = torch.stack([tup[0] for tup in minbatch_samples])
+                    minibatch_var = torch.mean(torch.mean((y_minibatch_predict_samples - targets)**2,0))
+                else:
+                    minibatch_var = torch.mean((output - targets)**2)
+
+                minibatch_log_var = torch.log(minibatch_var)
 
                 if self.regu:
-                    loss = heteroscedastic_loss(targets, output, log_var) + regularization
+                    loss = heteroscedastic_loss(targets, output, minibatch_log_var) + regularization
                 else:
-                    loss = heteroscedastic_loss(targets, output, log_var)
+                    loss = heteroscedastic_loss(targets, output, minibatch_log_var)
 
                 loss.backward()
                 optimizer.step()
@@ -365,21 +364,21 @@ class MCCONCRETEDROP(BaseModel):
             X_tensor = Variable(torch.FloatTensor(X_)).to(self.device)
             MC_samples = [model(X_tensor) for _ in range(T)]
             means = torch.stack([tup[0] for tup in MC_samples]).view(T, X_.shape[0]).cpu().data.numpy()
-            logvar = torch.stack([tup[1] for tup in MC_samples]).view(T, X_.shape[0]).cpu().data.numpy()
+            # logvar = torch.stack([tup[1] for tup in MC_samples]).view(T, X_.shape[0]).cpu().data.numpy()
         else:
             model.cpu()
             MC_samples = [model(Variable(torch.FloatTensor(X_))) for _ in range(T)]
             means = torch.stack([tup[0] for tup in MC_samples]).view(T, X_.shape[0]).data.numpy()
-            logvar = torch.stack([tup[1] for tup in MC_samples]).view(T, X_.shape[0]).data.numpy()
+            # # logvar = torch.stack([tup[1] for tup in MC_samples]).view(T, X_.shape[0]).data.numpy()
             # MC_samples = [model(Variable(torch.FloatTensor(X_))) for _ in range(T)]
             # means = torch.stack([model(Variable(torch.FloatTensor(X_)))[0] for _ in range(T)]).view(T, X_.shape[0]).data.numpy()
 
         # mc_time = time.time() - start_mc
         # print(f'mc_time={mc_time}')
         # logvar = np.mean(logvar,0)
-        aleatoric_uncertainty = np.exp(logvar).mean(0)
+        # aleatoric_uncertainty = np.exp(logvar).mean(0)
         # epistemic_uncertainty = np.var(means, 0).mean(0)
-        # aleatoric_uncertainty = self.aleatoric_uncertainty
+        aleatoric_uncertainty = self.aleatoric_uncertainty
         MC_pred_mean = np.mean(means, 0)  # N x 1
         means_var  = np.var(means, 0)
         MC_pred_var = means_var + aleatoric_uncertainty
@@ -395,7 +394,6 @@ class MCCONCRETEDROP(BaseModel):
             e_v = np.clip(means_var, np.finfo(means_var.dtype).eps, np.inf)
             a_v = np.clip(aleatoric_uncertainty, np.finfo(aleatoric_uncertainty.dtype).eps, np.inf)
             e_v[np.where((e_v < np.finfo(e_v.dtype).eps) & (e_v > -np.finfo(e_v.dtype).eps))] = 0
-            a_v[np.where((a_v < np.finfo(a_v.dtype).eps) & (a_v > -np.finfo(a_v.dtype).eps))] = 0
 
             v = np.clip(MC_pred_var, np.finfo(MC_pred_var.dtype).eps, np.inf)
             v[np.where((v < np.finfo(v.dtype).eps) & (v > -np.finfo(v.dtype).eps))] = 0
@@ -407,7 +405,7 @@ class MCCONCRETEDROP(BaseModel):
         m = m.flatten()
         v = v.flatten()
         e_v = e_v.flatten()
-        a_v = a_v.flatten()
+        # a_v = a_v.flatten()
 
         return m, v, e_v, a_v
 

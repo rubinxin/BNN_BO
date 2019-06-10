@@ -57,25 +57,33 @@ def fitting_new_points_1D(n_units, num_epochs, seed, T, length_scale, n_init, mc
     np.random.seed(seed)
     x_grid = np.linspace(0, 1, 100)[:, None]
     fvals = f(x_grid)
-    # x_old = np.random.rand(n_init)[:, None]
-    x_train_unsort = np.random.uniform(0, 1, 20 + n_per_update * total_itr * 3)[:, None]
-    y_train_unsort = f(x_train_unsort)
-    y_indices = y_train_unsort.argsort(0).flatten()
-    y_train = y_train_unsort[y_indices[::-1]]
-    x_train = x_train_unsort[y_indices[::-1]]
 
     # x_new datas
-    x_new_set = [np.random.uniform(0.84, 0.95, n_per_update), np.random.uniform(0.08, 0.2, n_per_update),
-                 np.random.uniform(0.43, 0.6, n_per_update), np.random.uniform(0.4, 0.65, n_per_update)]
+    if func_name == 'modified_sin1D':
+        x_train_unsort = np.random.uniform(0, 1, n_init + n_per_update * total_itr * 3)[:, None]
+        y_train_unsort = f(x_train_unsort)
+        y_indices = y_train_unsort.argsort(0).flatten()
+        y_train = y_train_unsort[y_indices[::-1]]
+        x_train = x_train_unsort[y_indices[::-1]]
+        x_new_set = [np.random.uniform(0.84, 0.95, n_per_update), np.random.uniform(0.08, 0.2, n_per_update),
+                     np.random.uniform(0.43, 0.6, n_per_update), np.random.uniform(0.4, 0.65, n_per_update)]
+    elif func_name == 'gramcy1D_yval':
+        x_train_unsort = np.random.uniform(0, 1, n_init + n_per_update * total_itr)[:, None]
+        y_train_unsort = f(x_train_unsort)
+        y_indices = y_train_unsort.argsort(0).flatten()
+        y_train = y_train_unsort[y_indices[::-1]]
+        x_train = x_train_unsort[y_indices[::-1]]
+        x_new_set = [np.random.uniform(0.62, 0.73, n_per_update), np.random.uniform(0.33, 0.48, n_per_update),
+                     np.random.uniform(0.13, 0.24, n_per_update), np.random.uniform(0.35, 0.65, n_per_update)]
+    else:
+        print('not implemented')
 
-    x_old = x_train[:20]
-    y_old = y_train[:20]
+    x_old = x_train[:n_init]
+    y_old = y_train[:n_init]
     x     = np.copy(x_old)
     y     = np.copy(y_old)
 
     figure, axes = plt.subplots(3, total_itr, figsize=(25, 10),  gridspec_kw={'height_ratios': [2, 2, 1]},sharex=True)
-    # figure = plt.subplots(figsize=(20, 10))
-    # axes = gridspec.GridSpec(3, total_itr, height_ratios=[2, 2, 1])
 
     for k in range(total_itr):
 
@@ -103,7 +111,6 @@ def fitting_new_points_1D(n_units, num_epochs, seed, T, length_scale, n_init, mc
             np.save(mcdrop_loss_saving_path, mcdrop_train_mse_loss)
 
         # -- Train and Prediction with LCBNN with MC Dropout mode and Se_y Util ---
-        # util_set = ['se_prod_yclip']
         util_set = [util_str]
 
         m_lcbnn_set = []
@@ -192,10 +199,6 @@ def fitting_new_points_1D(n_units, num_epochs, seed, T, length_scale, n_init, mc
             axes[i, k].set_ylabel('y')
             plt.grid()
 
-        # bar plot for log conditional gain for each data point averaged over all epoches
-        # axes_loggain = axes[-1, k].twinx()
-
-
         x_old = np.copy(x)
         y_old = np.copy(y)
         # Generate new data
@@ -223,7 +226,7 @@ if __name__ == '__main__':
     parser.add_argument('-n', '--n_units', help='Number of neurons per layer',
                         default=5, type=int)
     parser.add_argument('-e', '--n_epochs', help='Number of training epoches',
-                        default=800, type=int)
+                        default=8, type=int)
     parser.add_argument('-s', '--seed', help='Random seeds [0,6,11,12,13,23,29]',
                         default=42, type=int)
     parser.add_argument('-t', '--samples', help='MC samples for prediction',
@@ -233,7 +236,7 @@ if __name__ == '__main__':
     parser.add_argument('-l', '--ls', help='length scale value',
                         default=0.1, type=float)
     parser.add_argument('-i', '--n_init', help='Number of initial data',
-                        default=20, type=int)
+                        default=24, type=int)
     parser.add_argument('-m', '--mc_tau', help='Learn tau empirically using MC samples during training',
                         default=False, type=bool)
     parser.add_argument('-r', '--regul', help='Add regularisation to training losses',
