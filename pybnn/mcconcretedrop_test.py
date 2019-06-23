@@ -10,6 +10,7 @@ from torch.autograd import Variable
 import numpy as np
 from pybnn.base_model import BaseModel
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
+from pybnn.util.val_eval_metrics import val_test
 
 # np.random.seed(0)
 # torch.manual_seed(0)
@@ -410,6 +411,91 @@ class MCCONCRETEDROP(BaseModel):
         a_v = a_v.flatten()
 
         return m, v, e_v, a_v
+
+    @BaseModel._check_shapes_predict
+    def validate(self, X_test, Y_test):
+        r"""
+        Returns the predictive mean and variance of the objective function at
+        the given test points.
+        As well as the test log likelihood per point and rmse on test data
+
+        Parameters
+        ----------
+        X_test: np.ndarray (N, D)
+            N input test points
+        Y_test: np.ndarray (N, D)
+
+        Returns
+        ----------
+        """
+
+        # Normalize inputs
+        if self.normalize_input:
+            X_, _, _ = zero_mean_unit_var_normalization(X_test, self.X_mean, self.X_std)
+        else:
+            X_ = X_test
+
+        # Perform MC dropout
+        model = self.model
+        model.eval()
+        T = self.T
+        # model.eval()
+        # MC_samples : list T x N x 1
+        # Yt_hat = np.array([model(torch.Tensor(X_)).data.numpy() for _ in range(T)])
+        # start_mc=time.time()
+        gpu_test = False
+        if gpu_test:
+            X_tensor = Variable(torch.FloatTensor(X_)).to(self.device)
+            MC_samples = [model(X_tensor) for _ in range(T)]
+            means = torch.stack([tup[0] for tup in MC_samples]).view(T, X_.shape[0]).cpu().data.numpy()
+            logvar = torch.stack([tup[1] for tup in MC_samples]).view(T, X_.shape[0]).cpu().data.numpy()
+        else:
+            model.cpu()
+            MC_samples = [model(Variable(torch.FloatTensor(X_))) for _ in range(T)]
+            means = torch.stack([tup[0] for tup in MC_samples]).view(T, X_.shape[0]).data.numpy()
+            logvar = torch.stack([tup[1] for tup in MC_samples]).view(T, X_.shape[0]).data.numpy()
+            # MC_samples = [model(Variable(torch.FloatTensor(X_))) for _ in range(T)]
+            # means = torch.stack([model(Variable(torch.FloatTensor(X_)))[0] for _ in range(T)]).view(T, X_.shape[0]).data.numpy()
+
+        # mc_time = time.time() - start_mc
+        # print(f'mc_time={mc_time}')
+        # logvar = np.mean(logvar,0)
+        aleatoric_uncertainty = np.exp(logvar).mean(0)
+        # epistemic_uncertainty = np.var(means, 0).mean(0)
+        # aleatoric_uncertainty = self.aleatoric_uncertainty
+        MC_pred_mean = np.mean(means, 0)  # N x 1
+        means_var = np.var(means, 0)
+        MC_pred_var = means_var + aleatoric_uncertainty
+        # MC_pred_var = means_var + np.mean(np.exp(logvar), 0)
+
+        m = MC_pred_mean.flatten()
+
+        if MC_pred_var.shape[0] == 1:
+            e_v = np.clip(means_var, np.finfo(means_var.dtype).eps, np.inf)
+            a_v = np.clip(aleatoric_uncertainty, np.finfo(aleatoric_uncertainty.dtype).eps, np.inf)
+            v = np.clip(MC_pred_var, np.finfo(MC_pred_var.dtype).eps, np.inf)
+        else:
+            e_v = np.clip(means_var, np.finfo(means_var.dtype).eps, np.inf)
+            a_v = np.clip(aleatoric_uncertainty, np.finfo(aleatoric_uncertainty.dtype).eps, np.inf)
+            e_v[np.where((e_v < np.finfo(e_v.dtype).eps) & (e_v > -np.finfo(e_v.dtype).eps))] = 0
+            a_v[np.where((a_v < np.finfo(a_v.dtype).eps) & (a_v > -np.finfo(a_v.dtype).eps))] = 0
+
+            v = np.clip(MC_pred_var, np.finfo(MC_pred_var.dtype).eps, np.inf)
+            v[np.where((v < np.finfo(v.dtype).eps) & (v > -np.finfo(v.dtype).eps))] = 0
+
+        if self.normalize_output:
+            m = zero_mean_unit_var_denormalization(m, self.y_mean, self.y_std)
+            v *= self.y_std ** 2
+
+        m = m.flatten()
+        v = v.flatten()
+        e_v = e_v.flatten()
+        a_v = a_v.flatten()
+
+        # validation performance evaluation:
+        ppp, rmse = val_test(Y_test, T, means, logvar)
+
+        return m, v, e_v, a_v, ppp, rmse
 
     def get_incumbent(self):
         """

@@ -3,12 +3,14 @@ import logging
 import os
 import torch
 from torch import nn
+
 from torch.nn import functional as F
 from torch import optim
 from torch.autograd import Variable
 import numpy as np
 from pybnn.base_model import BaseModel
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
+from pybnn.util.val_eval_metrics import val_test
 
 # np.random.seed(0)
 # torch.manual_seed(0)
@@ -135,6 +137,27 @@ class ConcreteDropout(nn.Module):
 def heteroscedastic_loss(true, mean, log_var):
     precision = torch.exp(-log_var)
     return torch.mean(torch.sum(precision * (true - mean)**2 + log_var, 1), 0)
+
+def test(Y_true, K_test, means, logvar):
+    """
+    Estimate predictive log likelihood:
+    log p(y|x, D) = log int p(y|x, w) p(w|D) dw
+                 ~= log int p(y|x, w) q(w) dw
+                 ~= log 1/K sum p(y|x, w_k) with w_k sim q(w)
+                  = LogSumExp log p(y|x, w_k) - log K
+    :Y_true: a 2D array of size N x dim
+    :MC_samples: a 3D array of size samples K x N x 2*D
+    """
+    k = K_test
+    N = Y_true.shape[0]
+    mean = means
+    logvar = logvar
+    test_ll = -0.5 * np.exp(-logvar) * (mean - Y_val.squeeze())**2. - 0.5 * logvar - 0.5 * np.log(2 * np.pi) #Y_true[None]
+    test_ll = np.sum(np.sum(test_ll, -1), -1)
+    test_ll = logsumexp(test_ll) - np.log(k)
+    pppp = test_ll / N  # per point predictive probability
+    rmse = np.mean((np.mean(mean, 0) - Y_val.squeeze())**2.)**0.5
+    return pppp, rmse
 
 class Net(nn.Module):
     def __init__(self, n_inputs, n_units=[50, 50, 50],
@@ -370,7 +393,7 @@ class LCCD(BaseModel):
                             y_utils_counts[batch_point_idx] += 1
 
                     else:
-                        loss = heteroscedastic_loss(targets, output, log_var)+ regularization
+                        loss = heteroscedastic_loss(targets, output, log_var) + regularization
                         mse_loss = torch.zeros_like(loss)
 
                 else:
@@ -502,6 +525,7 @@ class LCCD(BaseModel):
             means = torch.stack([tup[0] for tup in MC_samples]).view(T, X_.shape[0]).data.numpy()
             logvar = torch.stack([tup[1] for tup in MC_samples]).view(T, X_.shape[0]).data.numpy()
 
+
         # mc_time = time.time() - start_mc
         # print(f'mc_time={mc_time}')
         # logvar = np.mean(logvar,0)
@@ -513,6 +537,7 @@ class LCCD(BaseModel):
         MC_pred_var = means_var + aleatoric_uncertainty
         # MC_pred_var = means_var + np.mean(np.exp(logvar), 0)
         m = MC_pred_mean.flatten()
+
 
         if MC_pred_var.shape[0] == 1:
             e_v = np.clip(means_var, np.finfo(means_var.dtype).eps, np.inf)
@@ -537,6 +562,88 @@ class LCCD(BaseModel):
         a_v = a_v.flatten()
 
         return m, v, e_v, a_v
+
+    @BaseModel._check_shapes_predict
+    def validate(self, X_test, Y_test):
+        r"""
+        Returns the predictive mean and variance of the objective function at
+        the given test points.
+        As well as the test log likelihood per point and rmse on test data
+
+        Parameters
+        ----------
+        X_test: np.ndarray (N, D)
+            N input test points
+        Y_test: np.ndarray (N, D)
+
+        Returns
+        ----------
+        """
+        # Normalize inputs
+        if self.normalize_input:
+            X_, _, _ = zero_mean_unit_var_normalization(X_test, self.X_mean, self.X_std)
+        else:
+            X_ = X_test
+
+        # Perform MC dropout
+        model = self.model
+        model.eval()
+        T     = self.T
+        # model.eval()
+        # MC_samples : list T x N x 1
+        # Yt_hat = np.array([model(torch.Tensor(X_)).data.numpy() for _ in range(T)])
+        # start_mc=time.time()
+        gpu_test = False
+        if gpu_test:
+            X_tensor = Variable(torch.FloatTensor(X_)).to(self.device)
+            MC_samples = [model(X_tensor) for _ in range(T)]
+            means = torch.stack([tup[0] for tup in MC_samples]).view(T, X_.shape[0]).cpu().data.numpy()
+            logvar = torch.stack([tup[1] for tup in MC_samples]).view(T, X_.shape[0]).cpu().data.numpy()
+        else:
+            model.cpu()
+            MC_samples = [model(Variable(torch.FloatTensor(X_))) for _ in range(T)]
+            means = torch.stack([tup[0] for tup in MC_samples]).view(T, X_.shape[0]).data.numpy()
+            logvar = torch.stack([tup[1] for tup in MC_samples]).view(T, X_.shape[0]).data.numpy()
+
+
+        # mc_time = time.time() - start_mc
+        # print(f'mc_time={mc_time}')
+        aleatoric_uncertainty = np.exp(logvar).mean(0)
+        # epistemic_uncertainty = np.var(means, 0).mean(0)
+        # aleatoric_uncertainty = self.aleatoric_uncertainty
+        MC_pred_mean = np.mean(means, 0)  # N x 1
+        means_var  = np.var(means, 0)
+        MC_pred_var = means_var + aleatoric_uncertainty
+        # MC_pred_var = means_var + np.mean(np.exp(logvar), 0)
+        m = MC_pred_mean.flatten()
+
+
+        if MC_pred_var.shape[0] == 1:
+            e_v = np.clip(means_var, np.finfo(means_var.dtype).eps, np.inf)
+            a_v = np.clip(aleatoric_uncertainty, np.finfo(aleatoric_uncertainty.dtype).eps, np.inf)
+            v = np.clip(MC_pred_var, np.finfo(MC_pred_var.dtype).eps, np.inf)
+        else:
+            e_v = np.clip(means_var, np.finfo(means_var.dtype).eps, np.inf)
+            a_v = np.clip(aleatoric_uncertainty, np.finfo(aleatoric_uncertainty.dtype).eps, np.inf)
+            e_v[np.where((e_v < np.finfo(e_v.dtype).eps) & (e_v > -np.finfo(e_v.dtype).eps))] = 0
+            a_v[np.where((a_v < np.finfo(a_v.dtype).eps) & (a_v > -np.finfo(a_v.dtype).eps))] = 0
+
+            v = np.clip(MC_pred_var, np.finfo(MC_pred_var.dtype).eps, np.inf)
+            v[np.where((v < np.finfo(v.dtype).eps) & (v > -np.finfo(v.dtype).eps))] = 0
+
+        if self.normalize_output:
+            m = zero_mean_unit_var_denormalization(m, self.y_mean, self.y_std)
+            v *= self.y_std ** 2
+
+        m = m.flatten()
+        v = v.flatten()
+        e_v = e_v.flatten()
+        a_v = a_v.flatten()
+
+        # validation performance evaluation:
+        ppp, rmse = val_test(Y_test, T, means, logvar)
+
+        return m, v, e_v, a_v, ppp, rmse
 
     def get_incumbent(self):
         """
