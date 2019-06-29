@@ -9,7 +9,8 @@ from torch.autograd import Variable
 import os
 from pybnn.base_model import BaseModel
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
-
+from pybnn.util.val_eval_metrics import val_test
+import sys
 
 class Net(nn.Module):
     def __init__(self, n_inputs, dropout_p, decay, n_units=[50, 50, 50], actv='tanh'):
@@ -173,7 +174,6 @@ class MCDROP(BaseModel):
             model_loading_path = os.path.join(saving_path,
                                               f'mcdrop_k={itr-1}_{self.actv}_n{self.n_units_1}_e{self.num_epochs}.pt')
             network.load_state_dict(torch.load(model_loading_path))
-            # network.eval()
 
         # Start training
         lc = np.zeros([self.num_epochs])
@@ -265,7 +265,7 @@ class MCDROP(BaseModel):
 
         # Perform MC dropout
         model = self.model
-        model.eval()
+        model.train()
         T     = self.T
 
 
@@ -273,59 +273,117 @@ class MCDROP(BaseModel):
         # Yt_hat: T x N x 1
         if self.gpu:
             model.cpu()
-            # Yt_hat = np.array([model(Variable(torch.Tensor(X_))).data.numpy() for _ in range(T)])
-            Yt_hat = np.hstack([model(Variable(torch.Tensor(X_[:, np.newaxis]))).data.numpy() for _ in range(T)])
-            # X_tensor = X_tensor.to(self.device)
-            # Yt_hat = np.hstack([model(Variable(torch.Tensor(X_[:, np.newaxis]))).cpu().data.numpy() for i in range(T)])
+            X_tensor = Variable(torch.Tensor(X_[:, np.newaxis]))
+            Yt_hat = torch.stack([model(X_tensor) for _ in range(T)]).view(T, X_.shape[0]).data.numpy()
         else:
-            # Yt_hat = np.array([model(Variable(torch.Tensor(X_))).data.numpy() for _ in range(T)])
-            Yt_hat = np.hstack([model(Variable(torch.Tensor(X_[:, np.newaxis]))).data.numpy() for _ in range(T)])
+            X_tensor = Variable(torch.Tensor(X_[:, np.newaxis]))
+            Yt_hat = torch.stack([model(X_tensor) for _ in range(T)]).view(T, X_.shape[0]).data.numpy()
 
         # mc_time = time.time() - start_mc
         # print(f'mc_time={mc_time}')
 
         tau = self.length_scale**2 * (1.0 - self.model.dropout_p) / (2. * self.model.decay * self.X.shape[0])
-        # MC_pred_mean = np.mean(Yt_hat, 0)  # N x 1
-        # Second_moment = np.mean(Yt_hat ** 2, 0) # N x 1
-        # MC_pred_var = Second_moment + 1./ tau - (MC_pred_mean ** 2)
-
-        MC_pred_mean = Yt_hat.mean(axis=1)
-        MC_pred_var = Yt_hat.var(axis=1) + 1./tau
+        aleatoric_uncertainty = 1. / tau
+        epistemic_uncertainty = Yt_hat.var(axis=0)
+        MC_pred_mean = Yt_hat.mean(axis=0)
+        MC_pred_var = epistemic_uncertainty + aleatoric_uncertainty
 
         m = MC_pred_mean
 
         if MC_pred_var.shape[0] == 1:
             v = np.clip(MC_pred_var, np.finfo(MC_pred_var.dtype).eps, np.inf)
+            e_v = np.clip(epistemic_uncertainty, np.finfo(epistemic_uncertainty.dtype).eps, np.inf)
+            a_v = np.clip(aleatoric_uncertainty, sys.float_info.epsilon, np.inf)
         else:
+            e_v = np.clip(epistemic_uncertainty, np.finfo(epistemic_uncertainty.dtype).eps, np.inf)
+            a_v = np.clip(aleatoric_uncertainty, sys.float_info.epsilon, np.inf)
+            e_v[np.where((e_v < np.finfo(e_v.dtype).eps) & (e_v > -np.finfo(e_v.dtype).eps))] = 0
+
             v = np.clip(MC_pred_var, np.finfo(MC_pred_var.dtype).eps, np.inf)
             v[np.where((v < np.finfo(v.dtype).eps) & (v > -np.finfo(v.dtype).eps))] = 0
 
-        if self.normalize_output:
-            m = zero_mean_unit_var_denormalization(m, self.y_mean, self.y_std)
-            v *= self.y_std ** 2
-
         m = m.flatten()
         v = v.flatten()
+        e_v = e_v.flatten()
+        a_v = a_v.flatten()
 
-        return m, v
+        return m, v, e_v, a_v
 
-    def get_incumbent(self):
-        """
-        Returns the best observed point and its function value
+    @BaseModel._check_shapes_predict
+    def validate(self, X_test, Y_test):
+        r"""
+        Returns the predictive mean and variance of the objective function at
+        the given test points.
+
+        Parameters
+        ----------
+        X_test: np.ndarray (N, D)
+            N input test points
 
         Returns
         ----------
-        incumbent: ndarray (D,)
-            current incumbent
-        incumbent_value: ndarray (N,)
-            the observed value of the incumbent
+        np.array(N,)
+            predictive mean
+        np.array(N,)
+            predictive variance
+
         """
 
-        inc, inc_value = super(MCDROP, self).get_incumbent()
+        # Normalize inputs
         if self.normalize_input:
-            inc = zero_mean_unit_var_denormalization(inc, self.X_mean, self.X_std)
+            X_, _, _ = zero_mean_unit_var_normalization(X_test, self.X_mean, self.X_std)
+        else:
+            X_ = X_test
 
-        if self.normalize_output:
-            inc_value = zero_mean_unit_var_denormalization(inc_value, self.y_mean, self.y_std)
+        # Perform MC dropout
+        model = self.model
+        model.train()
+        T     = self.T
 
-        return inc, inc_value
+
+        # start_mc=time.time()
+        # Yt_hat: T x N x 1
+        if self.gpu:
+            model.cpu()
+            X_tensor = Variable(torch.Tensor(X_[:, np.newaxis]))
+            Yt_hat = torch.stack([model(X_tensor) for _ in range(T)]).view(T, X_.shape[0]).data.numpy()
+        else:
+            X_tensor = Variable(torch.Tensor(X_[:, np.newaxis]))
+            Yt_hat = torch.stack([model(X_tensor) for _ in range(T)]).view(T, X_.shape[0]).data.numpy()
+
+        # mc_time = time.time() - start_mc
+        # print(f'mc_time={mc_time}')
+
+        tau = self.length_scale**2 * (1.0 - self.model.dropout_p) / (2. * self.model.decay * self.X.shape[0])
+        aleatoric_uncertainty = 1. / tau
+        epistemic_uncertainty = Yt_hat.var(axis=0)
+        MC_pred_mean = Yt_hat.mean(axis=0)
+        MC_pred_var = epistemic_uncertainty + aleatoric_uncertainty
+
+        m = MC_pred_mean
+
+        if MC_pred_var.shape[0] == 1:
+            v = np.clip(MC_pred_var, np.finfo(MC_pred_var.dtype).eps, np.inf)
+            e_v = np.clip(epistemic_uncertainty, np.finfo(epistemic_uncertainty.dtype).eps, np.inf)
+            a_v = np.clip(aleatoric_uncertainty, sys.float_info.epsilon, np.inf)
+        else:
+            e_v = np.clip(epistemic_uncertainty, np.finfo(epistemic_uncertainty.dtype).eps, np.inf)
+            a_v = np.clip(aleatoric_uncertainty, sys.float_info.epsilon, np.inf)
+            e_v[np.where((e_v < np.finfo(e_v.dtype).eps) & (e_v > -np.finfo(e_v.dtype).eps))] = 0
+
+            v = np.clip(MC_pred_var, np.finfo(MC_pred_var.dtype).eps, np.inf)
+            v[np.where((v < np.finfo(v.dtype).eps) & (v > -np.finfo(v.dtype).eps))] = 0
+
+        m = m.flatten()
+        v = v.flatten()
+        e_v = e_v.flatten()
+        a_v = a_v.flatten()
+
+        # validation performance evaluation:
+        logvar = np.log(aleatoric_uncertainty)
+        means = Yt_hat
+        ppp, rmse = val_test(Y_test, T, means, logvar)
+
+        rmse2 = np.mean((MC_pred_mean - Y_test.squeeze()) ** 2.) ** 0.5
+
+        return m, v, e_v, a_v,  ppp, rmse

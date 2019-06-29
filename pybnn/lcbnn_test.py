@@ -1,7 +1,7 @@
 import time
 import logging
 import numpy as np
-
+import sys
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -9,91 +9,21 @@ from torch.autograd import Variable
 import os
 from pybnn.base_model import BaseModel
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
+from pybnn.util.loss_calibration import cal_loss,utility
+from pybnn.util.val_eval_metrics import val_test
+from pybnn.util.loss_calibration import utility
 
 
-def utility(util_type='recent', Y_train=0):
-    '''Inputs:
-    y_true: true values (N,D)
-    y_pred: predicted values (N,D)
-    utility_type: the type of utility function to be used for maximisation
-    y_ob: training data
-    '''
-
-    def util(y_pred_samples, H_x, y_true_batch):
-
-        threshold = np.mean(Y_train)
-        # threshold = np.percentile(Y_train, 50)
-
-        # if util_type == 'se_y':
-        #     u = 1 - (y_pred_samples - H_x) ** 2 - y_pred_samples
-        #     cond_gain_unscaled = torch.mean(u, 0)
-        #     cond_gain = torch.exp(cond_gain_unscaled) + 1e-8
-        #
-
-        # elif util_type == 'se_prod_yclip':
-        #     u_unscaled = - (y_pred_samples - H_x) ** 2 * torch.exp(y_pred_samples)
-        #     u_scaled = 1 + torch.exp(u_unscaled)
-        #     u_clip = torch.ones_like(y_pred_samples)
-        #     u = torch.where(y_true_batch < threshold, u_scaled, u_clip)
-        #     cond_gain = torch.mean(u, 0)
-        if util_type == 'se_y':
-            cond_gain_unscaled = 1 - (y_true_batch - H_x) ** 2 - y_true_batch
-            cond_gain = torch.exp(cond_gain_unscaled) + 1e-8
-
-        # elif util_type == 'se_yclip':
-        #     u_unscaled = - (y_pred_samples - H_x) ** 2 - y_pred_samples
-        #     u_scaled = 1 + torch.exp(u_unscaled)
-        #     u_clip = torch.ones_like(y_pred_samples)
-        #     u = torch.where(y_true_batch < threshold, u_scaled, u_clip)
-        #     cond_gain = torch.mean(u, 0)
-        #
-        elif util_type == 'se_yclip':
-            u_unscaled = - (y_true_batch - H_x) ** 2 + torch.exp(-y_true_batch)
-            u_scaled = 1 + torch.exp(u_unscaled)
-            u_clip = torch.ones_like(y_true_batch)
-            cond_gain = torch.where(y_true_batch < threshold, u_scaled, u_clip)
-
-        elif util_type == 'se_prod_yclip':
-            u_unscaled = - (y_true_batch - H_x) ** 2 * torch.exp( y_true_batch) + torch.exp(-y_true_batch)
-            u_scaled = 1 + torch.exp(u_unscaled)
-            u_clip = torch.ones_like(y_true_batch)
-            cond_gain = torch.where(y_true_batch < threshold, u_scaled, u_clip)
-
-        elif util_type == 'exp_se_y':
-            u = torch.exp(- (y_pred_samples - H_x) ** 2 - y_pred_samples)
-            cond_gain_unscaled = torch.mean(u, 0)
-            cond_gain = torch.exp(cond_gain_unscaled) + 1e-8
-
-        elif util_type == 'se_prod_y':
-            u_unscaled = - (y_pred_samples - H_x) ** 2 * torch.exp( y_pred_samples)
-            cond_gain_unscaled = torch.mean(u_unscaled, 0)
-            cond_gain = torch.exp(cond_gain_unscaled) + 1e-8
-
-        elif util_type == 'recent':
-            check_y_recent_in_target = sum([torch.eq(H_x, a) for a in y_pred_samples])
-            u_clip = torch.ones_like(check_y_recent_in_target)
-            u_high_u = 3*torch.ones_like(check_y_recent_in_target)
-            u = torch.where(check_y_recent_in_target >= 1, u_high_u, u_clip)
-            # cond_gain = torch.FloatTensor(u.double())
-            cond_gain = u.float()
-
-        return cond_gain
-
-    return util
-
-
-def cal_loss(y_true, y_pred, util, H_x, y_pred_samples, y_true_batch):
+def cal_loss(y_true, y_pred, util, H_x, y_pred_samples):
     a = 1.0
     mse_loss = nn.functional.mse_loss(y_pred, y_true)
-    # log_condi_gain = torch.log(util(y_pred_samples.detach(), H_x.detach()))
-    log_condi_gain = torch.log(util(y_pred_samples, H_x, y_true_batch))
+
+    log_condi_gain = util(y_pred_samples, H_x, y_true)
 
     utility_value = a * log_condi_gain.mean()
     calibrated_loss = mse_loss - utility_value
 
     return calibrated_loss, mse_loss, log_condi_gain
-
-
 
 def optimal_h(y_pred_samples, util):
     T, N, D = y_pred_samples.shape
@@ -106,8 +36,6 @@ def optimal_h(y_pred_samples, util):
     I = torch.eye(D)
     H_x = I[G_t.argmax(1)]
     return H_x, G_t
-
-# util = utility(util_type=self.util_type)
 
 class Net(nn.Module):
     def __init__(self, n_inputs, dropout_p, decay, n_units=[50, 50, 50], actv='tanh'):
@@ -187,7 +115,8 @@ class LCBNN(BaseModel):
 
         self.seed = rng
         torch.manual_seed(self.seed)
-
+        np.random.seed(self.seed)
+        torch.cuda.manual_seed(self.seed)
         self.X = None
         self.y = None
         self.network = None
@@ -232,7 +161,6 @@ class LCBNN(BaseModel):
             The corresponding target values.
 
         """
-        # torch.manual_seed(self.seed)
 
         start_time = time.time()
 
@@ -262,24 +190,23 @@ class LCBNN(BaseModel):
         network = Net(n_inputs=features, dropout_p=self.dropout_p, decay= self.decay,
                       n_units=[self.n_units_1, self.n_units_2, self.n_units_3], actv=self.actv)
 
+        if itr > 0:
+            model_loading_path = os.path.join(saving_path,
+                                              f'lcbnn_k={itr-1}_{self.actv}_{self.util_type}_'
+                                              f'n{self.n_units_1}_e{self.num_epochs}.pt')
+            network.load_state_dict(torch.load(model_loading_path))  # TODO:check this
+
+        if self.gpu:
+            network = network.to(self.device)
+
         # optimizer = optim.Adam(network.parameters(),
         #                        lr=self.init_learning_rate,
         #                        weight_decay=self.decay)
         optimizer = optim.Adam(network.parameters(),
                                lr=self.init_learning_rate)
 
-        if itr > 0:
-            model_loading_path = os.path.join(saving_path,
-                                              f'lcbnn_k={itr-1}_{self.actv}_{self.util_type}_'
-                                              f'n{self.n_units_1}_e{self.num_epochs}.pt')
-            network.load_state_dict(torch.load(model_loading_path))  # TODO:check this
-            # network.eval()
-
-        if self.gpu:
-            network = network.to(self.device)
 
         # Start training
-
         lc = np.zeros([self.num_epochs])
         if self.loss_cal:
             util = utility(util_type=self.util_type, Y_train=self.y)
@@ -313,11 +240,9 @@ class LCBNN(BaseModel):
 
                 optimizer.zero_grad()
                 output = network(inputs)
-                if self.weights is None:
-                    loss = torch.nn.functional.mse_loss(output, targets)
 
                 if self.loss_cal and epoch >= self.lc_burn:
-                    loss, mse_loss, log_condi_gain = cal_loss(targets, output, util, h_x, y_pred_samples, targets)
+                    loss, mse_loss, log_condi_gain = cal_loss(targets, output, util, h_x, y_pred_samples)
 
                     for i in range(len(batch[0])):
                         batch_point_idx = np.where(self.y == batch[1][i])
@@ -336,17 +261,14 @@ class LCBNN(BaseModel):
                 train_batches += 1
 
                 if self.loss_cal and epoch >= (self.lc_burn - 1):
-                    # y_pred_samples = [network(inputs) for _ in range(self.T)]
-                    y_pred_samples = [network(inputs) for _ in range(10)]
+                    y_pred_samples = [network(inputs) for _ in range(30)]
                     y_pred_samples = torch.stack(y_pred_samples)
 
                     if self.util_type == 'se_prod_y' or self.util_type == 'se_prod_yclip':
                         numerator = torch.sum(y_pred_samples * torch.exp(y_pred_samples),0)
                         denominator = torch.sum(torch.exp(y_pred_samples),0)
                         h_x = numerator / denominator
-                    elif self.util_type == 'recent':
-                        h_x = targets
-                        y_pred_samples = torch.FloatTensor(self.y[-n_per_itr:,0][:,None])
+
                     else:
                         y_pred_mean = torch.mean(y_pred_samples, 0)
                         h_x = y_pred_mean
@@ -425,7 +347,7 @@ class LCBNN(BaseModel):
 
         # Perform MC dropout
         model = self.model
-        model.eval()
+        model.train()
         T = self.T
 
         # start_mc=time.time()
@@ -433,13 +355,11 @@ class LCBNN(BaseModel):
         gpu_test = False
         if gpu_test:
             X_tensor = Variable(torch.Tensor(X_[:, np.newaxis])).to(self.device)
-            Yt_hat = np.hstack([model(X_tensor).cpu().data.numpy() for _ in range(T)])
+            Yt_hat = torch.stack([model(X_tensor) for _ in range(T)]).view(T, X_.shape[0]).cpu().data.numpy()
         else:
             model.cpu()
             X_tensor = Variable(torch.Tensor(X_[:, np.newaxis]))
-            Yt_hat = np.hstack([model(X_tensor).data.numpy() for _ in range(T)])
-            # torch.manual_seed(1)
-            # Yt_hat = np.array([model(torch.Tensor(X_)).data.numpy() for _ in range(T)])
+            Yt_hat = torch.stack([model(X_tensor) for _ in range(T)]).view(T, X_.shape[0]).data.numpy()
 
         # mc_time = time.time() - start_mc
         # print(f'mc_time={mc_time}')
@@ -448,18 +368,26 @@ class LCBNN(BaseModel):
             return Yt_hat
         else:
             tau = self.length_scale ** 2 * (1.0 - self.model.dropout_p) / (2. * self.model.decay * self.X.shape[0])
-            MC_pred_mean = Yt_hat.mean(axis=1)
-            MC_pred_var = Yt_hat.var(axis=1) + 1. / tau
+            aleatoric_uncertainty = 1. / tau
+            epistemic_uncertainty = Yt_hat.var(axis=0)
+            MC_pred_mean = Yt_hat.mean(axis=0)
+            MC_pred_var = epistemic_uncertainty + aleatoric_uncertainty
 
             # MC_pred_mean = np.mean(Yt_hat, 0)  # N x 1
             # Second_moment = np.mean(Yt_hat ** 2, 0)  # N x 1
             # MC_pred_var = Second_moment - (MC_pred_mean ** 2)  + 1./tau
 
-            m = MC_pred_mean  # .flatten()
+            m = MC_pred_mean.flatten()  # .flatten()
 
             if MC_pred_var.shape[0] == 1:
                 v = np.clip(MC_pred_var, np.finfo(MC_pred_var.dtype).eps, np.inf)
+                e_v = np.clip(epistemic_uncertainty, np.finfo(epistemic_uncertainty.dtype).eps, np.inf)
+                a_v = np.clip(aleatoric_uncertainty, sys.float_info.epsilon, np.inf)
             else:
+                e_v = np.clip(epistemic_uncertainty, np.finfo(epistemic_uncertainty.dtype).eps, np.inf)
+                a_v = np.clip(aleatoric_uncertainty, sys.float_info.epsilon, np.inf)
+                e_v[np.where((e_v < np.finfo(e_v.dtype).eps) & (e_v > -np.finfo(e_v.dtype).eps))] = 0
+
                 v = np.clip(MC_pred_var, np.finfo(MC_pred_var.dtype).eps, np.inf)
                 v[np.where((v < np.finfo(v.dtype).eps) & (v > -np.finfo(v.dtype).eps))] = 0
 
@@ -469,27 +397,97 @@ class LCBNN(BaseModel):
 
             m = m.flatten()
             v = v.flatten()
+            e_v = e_v.flatten()
+            a_v = a_v.flatten()
 
-            return m, v
+            return m, v, e_v, a_v
 
-    def get_incumbent(self):
-        """
-        Returns the best observed point and its function value
+    @BaseModel._check_shapes_predict
+    def validate(self, X_test, Y_test):
+        r"""
+        Returns the predictive mean and variance of the objective function at
+        the given test points.
+
+        Parameters
+        ----------
+        X_test: np.ndarray (N, D)
+            N input test points
 
         Returns
         ----------
-        incumbent: ndarray (D,)
-            current incumbent
-        incumbent_value: ndarray (N,)
-            the observed value of the incumbent
-        """
+        np.array(N,)
+            predictive mean
+        np.array(N,)
+            predictive variance
 
-        inc, inc_value = super(LCBNN, self).get_incumbent()
+        """
+        # torch.manual_seed(self.seed)
+
+        # Normalize inputs
+
         if self.normalize_input:
-            inc = zero_mean_unit_var_denormalization(inc, self.X_mean, self.X_std)
+            X_, _, _ = zero_mean_unit_var_normalization(X_test, self.X_mean, self.X_std)
+        else:
+            X_ = X_test
+
+        # Perform MC dropout
+        model = self.model
+        model.train()
+        T = self.T
+
+        # start_mc=time.time()
+        # Yt_hat: T x N x 1
+        gpu_test = False
+        if gpu_test:
+            X_tensor = Variable(torch.Tensor(X_[:, np.newaxis])).to(self.device)
+            Yt_hat = torch.stack([model(X_tensor) for _ in range(T)]).view(T, X_.shape[0]).cpu().data.numpy()
+        else:
+            model.cpu()
+            X_tensor = Variable(torch.Tensor(X_[:, np.newaxis]))
+            Yt_hat = torch.stack([model(X_tensor) for _ in range(T)]).view(T, X_.shape[0]).data.numpy()
+        # mc_time = time.time() - start_mc
+        # print(f'mc_time={mc_time}')
+
+
+        tau = self.length_scale ** 2 * (1.0 - self.model.dropout_p) / (2. * self.model.decay * self.X.shape[0])
+        aleatoric_uncertainty = 1. / tau
+        epistemic_uncertainty = Yt_hat.var(axis=0)
+        MC_pred_mean = Yt_hat.mean(axis=0)
+        MC_pred_var = epistemic_uncertainty + aleatoric_uncertainty
+
+        # MC_pred_mean = np.mean(Yt_hat, 0)  # N x 1
+        # Second_moment = np.mean(Yt_hat ** 2, 0)  # N x 1
+        # MC_pred_var = Second_moment - (MC_pred_mean ** 2)  + 1./tau
+
+        m = MC_pred_mean.flatten()  # .flatten()
+
+        if MC_pred_var.shape[0] == 1:
+            v = np.clip(MC_pred_var, np.finfo(MC_pred_var.dtype).eps, np.inf)
+            e_v = np.clip(epistemic_uncertainty, np.finfo(epistemic_uncertainty.dtype).eps, np.inf)
+            a_v = np.clip(aleatoric_uncertainty, sys.float_info.epsilon, np.inf)
+        else:
+            e_v = np.clip(epistemic_uncertainty, np.finfo(epistemic_uncertainty.dtype).eps, np.inf)
+            a_v = np.clip(aleatoric_uncertainty, sys.float_info.epsilon, np.inf)
+            e_v[np.where((e_v < np.finfo(e_v.dtype).eps) & (e_v > -np.finfo(e_v.dtype).eps))] = 0
+
+            v = np.clip(MC_pred_var, np.finfo(MC_pred_var.dtype).eps, np.inf)
+            v[np.where((v < np.finfo(v.dtype).eps) & (v > -np.finfo(v.dtype).eps))] = 0
 
         if self.normalize_output:
-            inc_value = zero_mean_unit_var_denormalization(inc_value, self.y_mean, self.y_std)
+            m = zero_mean_unit_var_denormalization(m, self.y_mean, self.y_std)
+            v *= self.y_std ** 2
 
-        return inc, inc_value
+        m = m.flatten()
+        v = v.flatten()
+        e_v = e_v.flatten()
+        a_v = a_v.flatten()
+
+        # validation performance evaluation:
+        logvar = np.log(aleatoric_uncertainty)
+        means = Yt_hat
+        ppp, rmse = val_test(Y_test, T, means, logvar)
+
+        rmse2 = np.mean((MC_pred_mean - Y_test.squeeze()) ** 2.) ** 0.5
+
+        return m, v, e_v, a_v, ppp, rmse
 

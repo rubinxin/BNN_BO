@@ -11,72 +11,70 @@ import numpy as np
 from pybnn.base_model import BaseModel
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
 from pybnn.util.val_eval_metrics import val_test
+from pybnn.util.loss_calibration import cal_loss,utility, heteroscedastic_loss
 
-# np.random.seed(0)
-# torch.manual_seed(0)
-# torch.cuda.manual_seed(0)
 
-def utility(util_type='recent', Y_train=0):
-    '''Inputs:
-    y_true: true values (N,D)
-    y_pred: predicted values (N,D)
-    utility_type: the type of utility function to be used for maximisation
-    y_ob: training data
-    '''
-
-    def util(y_pred_samples, H_x, y_true_batch):
-
-        threshold = np.mean(Y_train)
-        # threshold = np.percentile(Y_train, 50)
-
-        # if util_type == 'se_y':
-        #     u = 1 - (y_pred_samples - H_x) ** 2 - y_pred_samples
-        #     cond_gain_unscaled = torch.mean(u, 0)
-        #     cond_gain = torch.exp(cond_gain_unscaled) + 1e-8
-
-        if util_type == 'se_y':
-            cond_gain_unscaled = 1 - (y_true_batch - H_x) ** 2 - y_true_batch
-            cond_gain = torch.exp(cond_gain_unscaled) + 1e-8
-
-        elif util_type == 'se_yclip':
-            u_unscaled = - (y_true_batch - H_x) ** 2 + torch.exp(-y_true_batch)
-            u_scaled = 1 + torch.exp(u_unscaled)
-            u_clip = torch.ones_like(y_true_batch)
-            cond_gain = torch.where(y_true_batch < threshold, u_scaled, u_clip)
-        # elif util_type == 'se_yclip':
-        #     u_unscaled = - (y_pred_samples - H_x) ** 2 - y_pred_samples
-        #     u_scaled = 1 + torch.exp(u_unscaled)
-        #     u_clip = torch.ones_like(y_pred_samples)
-        #     u = torch.where(y_true_batch < threshold, u_scaled, u_clip)
-        #     cond_gain = torch.mean(u, 0)
-        elif util_type == 'se_prod_yclip':
-            u_unscaled = - (y_true_batch - H_x) ** 2 * torch.exp( y_true_batch) + torch.exp(-y_true_batch)
-            u_scaled = 1 + torch.exp(u_unscaled)
-            u_clip = torch.ones_like(y_true_batch)
-            cond_gain = torch.where(y_true_batch < threshold, u_scaled, u_clip)
-        # elif util_type == 'se_prod_yclip':
-        #     u_unscaled = - (y_pred_samples - H_x) ** 2 * torch.exp(y_pred_samples)
-        #     u_scaled = 1 + torch.exp(u_unscaled)
-        #     u_clip = torch.ones_like(y_pred_samples)
-        #     u = torch.where(y_true_batch < threshold, u_scaled, u_clip)
-        #     cond_gain = torch.mean(u, 0)
-        return cond_gain
-
-    return util
-
-def cal_loss(y_true, output, util, H_x, y_pred_samples, log_var, regularization=None):
-    a = 4.0
-    if regularization is None:
-        mse_loss = heteroscedastic_loss(y_true, output, log_var)
-    else:
-        mse_loss = heteroscedastic_loss(y_true, output, log_var) + regularization
-
-    log_condi_gain = torch.log(util(y_pred_samples, H_x, y_true))
-
-    utility_value = a * log_condi_gain.mean()
-    calibrated_loss = mse_loss - utility_value
-
-    return calibrated_loss, mse_loss, log_condi_gain
+# def utility(util_type='recent', Y_train=0):
+#     '''Inputs:
+#     y_true: true values (N,D)
+#     y_pred: predicted values (N,D)
+#     utility_type: the type of utility function to be used for maximisation
+#     y_ob: training data
+#     '''
+#
+#     def util(y_pred_samples, H_x, y_true_batch):
+#
+#         threshold = np.mean(Y_train)
+#         # threshold = np.percentile(Y_train, 50)
+#
+#         # if util_type == 'se_y':
+#         #     u = 1 - (y_pred_samples - H_x) ** 2 - y_pred_samples
+#         #     cond_gain_unscaled = torch.mean(u, 0)
+#         #     cond_gain = torch.exp(cond_gain_unscaled) + 1e-8
+#
+#         if util_type == 'se_y':
+#             cond_gain_unscaled = 1 - (y_true_batch - H_x) ** 2 - y_true_batch
+#             cond_gain = torch.exp(cond_gain_unscaled) + 1e-8
+#
+#         elif util_type == 'se_yclip':
+#             u_unscaled = - (y_true_batch - H_x) ** 2 + torch.exp(-y_true_batch)
+#             u_scaled = 1 + torch.exp(u_unscaled)
+#             u_clip = torch.ones_like(y_true_batch)
+#             cond_gain = torch.where(y_true_batch < threshold, u_scaled, u_clip)
+#         # elif util_type == 'se_yclip':
+#         #     u_unscaled = - (y_pred_samples - H_x) ** 2 - y_pred_samples
+#         #     u_scaled = 1 + torch.exp(u_unscaled)
+#         #     u_clip = torch.ones_like(y_pred_samples)
+#         #     u = torch.where(y_true_batch < threshold, u_scaled, u_clip)
+#         #     cond_gain = torch.mean(u, 0)
+#         elif util_type == 'se_prod_yclip':
+#             u_unscaled = - (y_true_batch - H_x) ** 2 * torch.exp( y_true_batch) + torch.exp(-y_true_batch)
+#             u_scaled = 1 + torch.exp(u_unscaled)
+#             u_clip = torch.ones_like(y_true_batch)
+#             cond_gain = torch.where(y_true_batch < threshold, u_scaled, u_clip)
+#         # elif util_type == 'se_prod_yclip':
+#         #     u_unscaled = - (y_pred_samples - H_x) ** 2 * torch.exp(y_pred_samples)
+#         #     u_scaled = 1 + torch.exp(u_unscaled)
+#         #     u_clip = torch.ones_like(y_pred_samples)
+#         #     u = torch.where(y_true_batch < threshold, u_scaled, u_clip)
+#         #     cond_gain = torch.mean(u, 0)
+#         return cond_gain
+#
+#     return util
+#
+# def cal_loss(y_true, output, util, H_x, y_pred_samples, log_var, regularization=None):
+#     a = 4.0
+#     if regularization is None:
+#         mse_loss = heteroscedastic_loss(y_true, output, log_var)
+#     else:
+#         mse_loss = heteroscedastic_loss(y_true, output, log_var) + regularization
+#
+#     log_condi_gain = torch.log(util(y_pred_samples, H_x, y_true))
+#
+#     utility_value = a * log_condi_gain.mean()
+#     calibrated_loss = mse_loss - utility_value
+#
+#     return calibrated_loss, mse_loss, log_condi_gain
 
 
 class ConcreteDropout(nn.Module):
@@ -134,30 +132,6 @@ class ConcreteDropout(nn.Module):
 
         return x
 
-def heteroscedastic_loss(true, mean, log_var):
-    precision = torch.exp(-log_var)
-    return torch.mean(torch.sum(precision * (true - mean)**2 + log_var, 1), 0)
-
-def test(Y_true, K_test, means, logvar):
-    """
-    Estimate predictive log likelihood:
-    log p(y|x, D) = log int p(y|x, w) p(w|D) dw
-                 ~= log int p(y|x, w) q(w) dw
-                 ~= log 1/K sum p(y|x, w_k) with w_k sim q(w)
-                  = LogSumExp log p(y|x, w_k) - log K
-    :Y_true: a 2D array of size N x dim
-    :MC_samples: a 3D array of size samples K x N x 2*D
-    """
-    k = K_test
-    N = Y_true.shape[0]
-    mean = means
-    logvar = logvar
-    test_ll = -0.5 * np.exp(-logvar) * (mean - Y_val.squeeze())**2. - 0.5 * logvar - 0.5 * np.log(2 * np.pi) #Y_true[None]
-    test_ll = np.sum(np.sum(test_ll, -1), -1)
-    test_ll = logsumexp(test_ll) - np.log(k)
-    pppp = test_ll / N  # per point predictive probability
-    rmse = np.mean((np.mean(mean, 0) - Y_val.squeeze())**2.)**0.5
-    return pppp, rmse
 
 class Net(nn.Module):
     def __init__(self, n_inputs, n_units=[50, 50, 50],
@@ -188,7 +162,6 @@ class Net(nn.Module):
 
         regularization = torch.empty(4, device=x.device)
         x1 = self.activation(self.linear1(x))
-        # x1, regularization[0] = self.conc_drop1(x, nn.Sequential(self.linear1, self.activation))
         x2, regularization[0] = self.conc_drop2(x1, nn.Sequential(self.linear2, self.activation))
         x3, regularization[1] = self.conc_drop3(x2, nn.Sequential(self.linear3, self.activation))
 
@@ -247,6 +220,8 @@ class LCCD(BaseModel):
 
         self.seed = rng
         torch.manual_seed(self.seed)
+        np.random.seed(self.seed)
+        torch.cuda.manual_seed(self.seed)
 
         self.loss_cal = loss_cal
         self.lc_burn = lc_burn
@@ -346,7 +321,7 @@ class LCCD(BaseModel):
         network.train()
 
         for epoch in range(self.num_epochs):
-
+            print(epoch)
             epoch_start_time = time.time()
 
             train_err = 0
@@ -509,9 +484,8 @@ class LCCD(BaseModel):
         model = self.model
         model.eval()
         T     = self.T
-        # model.eval()
+
         # MC_samples : list T x N x 1
-        # Yt_hat = np.array([model(torch.Tensor(X_)).data.numpy() for _ in range(T)])
         # start_mc=time.time()
         gpu_test = False
         if gpu_test:
@@ -528,14 +502,11 @@ class LCCD(BaseModel):
 
         # mc_time = time.time() - start_mc
         # print(f'mc_time={mc_time}')
-        # logvar = np.mean(logvar,0)
+        # compute uncertainties: aleatoric and epistemic (means_var)
         aleatoric_uncertainty = np.exp(logvar).mean(0)
-        # epistemic_uncertainty = np.var(means, 0).mean(0)
-        # aleatoric_uncertainty = self.aleatoric_uncertainty
         MC_pred_mean = np.mean(means, 0)  # N x 1
         means_var  = np.var(means, 0)
         MC_pred_var = means_var + aleatoric_uncertainty
-        # MC_pred_var = means_var + np.mean(np.exp(logvar), 0)
         m = MC_pred_mean.flatten()
 
 
@@ -589,9 +560,8 @@ class LCCD(BaseModel):
         model = self.model
         model.eval()
         T     = self.T
-        # model.eval()
+
         # MC_samples : list T x N x 1
-        # Yt_hat = np.array([model(torch.Tensor(X_)).data.numpy() for _ in range(T)])
         # start_mc=time.time()
         gpu_test = False
         if gpu_test:
@@ -608,13 +578,12 @@ class LCCD(BaseModel):
 
         # mc_time = time.time() - start_mc
         # print(f'mc_time={mc_time}')
+
+        # compute uncertainties: aleatoric and epistemic (means_var)
         aleatoric_uncertainty = np.exp(logvar).mean(0)
-        # epistemic_uncertainty = np.var(means, 0).mean(0)
-        # aleatoric_uncertainty = self.aleatoric_uncertainty
-        MC_pred_mean = np.mean(means, 0)  # N x 1
+        MC_pred_mean = np.mean(means, 0)
         means_var  = np.var(means, 0)
         MC_pred_var = means_var + aleatoric_uncertainty
-        # MC_pred_var = means_var + np.mean(np.exp(logvar), 0)
         m = MC_pred_mean.flatten()
 
 
@@ -644,24 +613,3 @@ class LCCD(BaseModel):
         ppp, rmse = val_test(Y_test, T, means, logvar)
 
         return m, v, e_v, a_v, ppp, rmse
-
-    def get_incumbent(self):
-        """
-        Returns the best observed point and its function value
-
-        Returns
-        ----------
-        incumbent: ndarray (D,)
-            current incumbent
-        incumbent_value: ndarray (N,)
-            the observed value of the incumbent
-        """
-
-        inc, inc_value = super(LCCD, self).get_incumbent()
-        if self.normalize_input:
-            inc = zero_mean_unit_var_denormalization(inc, self.X_mean, self.X_std)
-
-        if self.normalize_output:
-            inc_value = zero_mean_unit_var_denormalization(inc_value, self.y_mean, self.y_std)
-
-        return inc, inc_value

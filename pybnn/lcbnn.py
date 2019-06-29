@@ -378,7 +378,7 @@ class LCBNN(BaseModel):
 
         # Perform MC dropout
         model = self.model
-        model.eval()
+        model.train()
         T = self.T
 
         # start_mc=time.time()

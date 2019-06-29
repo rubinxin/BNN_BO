@@ -248,7 +248,7 @@ class MCDROP(BaseModel):
 
         # Perform MC dropout
         model = self.model
-        model.eval()
+        model.train()
         T     = self.T
 
 

@@ -258,7 +258,7 @@ class MCCONCRETEDROP(BaseModel):
             for batch in self.iterate_minibatches(self.X, self.y,
                                                   batch_size, shuffle=True):
 
-                inputs =  Variable(torch.FloatTensor(batch[0]))
+                inputs  = Variable(torch.FloatTensor(batch[0]))
                 targets = Variable(torch.FloatTensor(batch[1]))
                 if self.gpu:
                     inputs = inputs.to(self.device)
@@ -266,16 +266,6 @@ class MCCONCRETEDROP(BaseModel):
 
                 optimizer.zero_grad()
                 output, log_var, regularization = network(inputs)
-
-                # # Estimate log_var empirically
-                # if self.mc_tau:
-                #     minbatch_samples = [network(inputs) for _ in range(self.T)]
-                #     y_minibatch_predict_samples = torch.stack([tup[0] for tup in minbatch_samples])
-                #     minibatch_var = torch.mean(torch.mean((y_minibatch_predict_samples - targets)**2,0))
-                # else:
-                #     minibatch_var = torch.mean((output - targets)**2)
-                #
-                # minibatch_log_var = torch.log(minibatch_var)
 
                 if self.regu:
                     loss = heteroscedastic_loss(targets, output, log_var) + regularization
@@ -304,12 +294,12 @@ class MCCONCRETEDROP(BaseModel):
         print('concdrop model saved')
 
         # Estimate aleatoric uncertainty (overall tau^-1)
-        X_train_tensor = Variable(torch.FloatTensor(self.X))
-        if self.gpu:
-            X_train_tensor = X_train_tensor.to(self.device)
-        y_train_mc_samples = [network(X_train_tensor) for _ in range(self.T)]
-        y_train_predict_samples = torch.stack([tup[0] for tup in y_train_mc_samples]).view(self.T, N).cpu().data.numpy()
-        self.aleatoric_uncertainty = np.mean(np.mean((y_train_predict_samples - self.y.flatten())**2 ,0))
+        # X_train_tensor = Variable(torch.FloatTensor(self.X))
+        # if self.gpu:
+        #     X_train_tensor = X_train_tensor.to(self.device)
+        # y_train_mc_samples = [network(X_train_tensor) for _ in range(self.T)]
+        # y_train_predict_samples = torch.stack([tup[0] for tup in y_train_mc_samples]).view(self.T, N).cpu().data.numpy()
+        # self.aleatoric_uncertainty = np.mean(np.mean((y_train_predict_samples - self.y.flatten())**2 ,0))
 
         train_mse_loss_all_epoch = np.array(lc[:])
 
@@ -336,15 +326,18 @@ class MCCONCRETEDROP(BaseModel):
 
         Parameters
         ----------
-        X_test: np.ndarray (N, D)
-            N input test points
+        X_test: N input test points, np.ndarray (N, D)
+
 
         Returns
         ----------
-        np.array(N,)
-            predictive mean
-        np.array(N,)
-            predictive variance
+        m: Predictive mean, np.array(N,)
+
+        v: Predictive variance= epistemic uncertainty + aleatoric uncertainty, np.array(N,)
+
+        e_v: Epistemic variance, np.array(N,)
+
+        a_v: Aleatoric variance, np.array(N,)
 
         """
         # Normalize inputs
@@ -377,14 +370,11 @@ class MCCONCRETEDROP(BaseModel):
 
         # mc_time = time.time() - start_mc
         # print(f'mc_time={mc_time}')
-        # logvar = np.mean(logvar,0)
+        # compute uncertainties: aleatoric and epistemic (means_var)
         aleatoric_uncertainty = np.exp(logvar).mean(0)
-        # epistemic_uncertainty = np.var(means, 0).mean(0)
-        # aleatoric_uncertainty = self.aleatoric_uncertainty
-        MC_pred_mean = np.mean(means, 0)  # N x 1
+        MC_pred_mean = np.mean(means, 0)
         means_var  = np.var(means, 0)
         MC_pred_var = means_var + aleatoric_uncertainty
-        # MC_pred_var = means_var + np.mean(np.exp(logvar), 0)
 
         m = MC_pred_mean.flatten()
 
@@ -421,12 +411,26 @@ class MCCONCRETEDROP(BaseModel):
 
         Parameters
         ----------
-        X_test: np.ndarray (N, D)
-            N input test points
-        Y_test: np.ndarray (N, D)
+        X_test: N input test points, np.ndarray (N, D)
+
+        Y_test: N input test values, np.ndarray (N, 1)
 
         Returns
         ----------
+        m: Predictive mean, np.array(N,)
+
+        v: Predictive variance = epistemic uncertainty + aleatoric uncertainty, np.array(N,)
+
+        e_v: Epistemic variance, np.array(N,)
+
+        a_v: Aleatoric variance, np.array(N,)
+
+        ppp: Per point predictive probability = test log likelihood /N , scalar
+
+
+        rmse: Root mean square error, scalar
+
+
         """
 
         # Normalize inputs
@@ -439,10 +443,7 @@ class MCCONCRETEDROP(BaseModel):
         model = self.model
         model.eval()
         T = self.T
-        # model.eval()
         # MC_samples : list T x N x 1
-        # Yt_hat = np.array([model(torch.Tensor(X_)).data.numpy() for _ in range(T)])
-        # start_mc=time.time()
         gpu_test = False
         if gpu_test:
             X_tensor = Variable(torch.FloatTensor(X_)).to(self.device)
@@ -454,19 +455,13 @@ class MCCONCRETEDROP(BaseModel):
             MC_samples = [model(Variable(torch.FloatTensor(X_))) for _ in range(T)]
             means = torch.stack([tup[0] for tup in MC_samples]).view(T, X_.shape[0]).data.numpy()
             logvar = torch.stack([tup[1] for tup in MC_samples]).view(T, X_.shape[0]).data.numpy()
-            # MC_samples = [model(Variable(torch.FloatTensor(X_))) for _ in range(T)]
-            # means = torch.stack([model(Variable(torch.FloatTensor(X_)))[0] for _ in range(T)]).view(T, X_.shape[0]).data.numpy()
 
-        # mc_time = time.time() - start_mc
-        # print(f'mc_time={mc_time}')
-        # logvar = np.mean(logvar,0)
+        # compute uncertainties: aleatoric and epistemic (means_var)
         aleatoric_uncertainty = np.exp(logvar).mean(0)
-        # epistemic_uncertainty = np.var(means, 0).mean(0)
-        # aleatoric_uncertainty = self.aleatoric_uncertainty
-        MC_pred_mean = np.mean(means, 0)  # N x 1
+
+        MC_pred_mean = np.mean(means, 0)
         means_var = np.var(means, 0)
         MC_pred_var = means_var + aleatoric_uncertainty
-        # MC_pred_var = means_var + np.mean(np.exp(logvar), 0)
 
         m = MC_pred_mean.flatten()
 
@@ -497,23 +492,3 @@ class MCCONCRETEDROP(BaseModel):
 
         return m, v, e_v, a_v, ppp, rmse
 
-    def get_incumbent(self):
-        """
-        Returns the best observed point and its function value
-
-        Returns
-        ----------
-        incumbent: ndarray (D,)
-            current incumbent
-        incumbent_value: ndarray (N,)
-            the observed value of the incumbent
-        """
-
-        inc, inc_value = super(MCCONCRETEDROP, self).get_incumbent()
-        if self.normalize_input:
-            inc = zero_mean_unit_var_denormalization(inc, self.X_mean, self.X_std)
-
-        if self.normalize_output:
-            inc_value = zero_mean_unit_var_denormalization(inc_value, self.y_mean, self.y_std)
-
-        return inc, inc_value

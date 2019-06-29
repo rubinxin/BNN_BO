@@ -2,19 +2,16 @@ import numpy as np
 import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
-from matplotlib import gridspec
-from exps_tasks.math_functions import get_function
 from pybnn.mcconcretedrop_test import MCCONCRETEDROP
 from pybnn.lccd_test import LCCD
 import time
 from matplotlib import cm
 import argparse
 import os
-
-# func_name = 'gramcy1D_yval'
+import pickle
 
 def fitting_new_points_1D(func_name, n_units, num_epochs, seed, T, length_scale, n_init, mc_tau, regul, warm_start,
-                          util_str, activation, n_per_update):
+                          util_str, activation, n_per_update, epoch_interval):
     print(f'{func_name}: seed={seed}')
     if func_name == 'gramcy1D_yval':
         def f(x_0):
@@ -39,18 +36,18 @@ def fitting_new_points_1D(func_name, n_units, num_epochs, seed, T, length_scale,
     if not os.path.exists(saving_model_path):
         os.makedirs(saving_model_path)
 
-    # act_func = 'relu'
-    # act_func = 'tanh'
     act_func = activation
 
-    saving_loss_path = os.path.join(saving_path,
+    save_results_path = os.path.join(saving_path,
                                  f'{act_func}_concdrop/')
-    if not os.path.exists(saving_loss_path):
-        os.makedirs(saving_loss_path)
+    if not os.path.exists(save_results_path):
+        os.makedirs(save_results_path)
 
-    save_loss = True
+    save_results = True
     display_time = True
-    epoch_interval = int(num_epochs/20)
+    # epoch_interval = int(num_epochs/n_val_points)
+    epoch_interval = epoch_interval
+    # epoch_interval = 5
 
     total_itr = 4
     normalise = False
@@ -67,6 +64,7 @@ def fitting_new_points_1D(func_name, n_units, num_epochs, seed, T, length_scale,
         x_train = x_train_unsort[y_indices[::-1]]
         x_new_set = [np.random.uniform(0.84, 0.95, n_per_update), np.random.uniform(0.08, 0.2, n_per_update),
                      np.random.uniform(0.43, 0.6, n_per_update), np.random.uniform(0.4, 0.65, n_per_update)]
+
     elif func_name == 'gramcy1D_yval':
         x_train_unsort = np.random.uniform(0, 1, n_init + n_per_update * total_itr)[:, None]
         y_train_unsort = f(x_train_unsort)
@@ -75,11 +73,14 @@ def fitting_new_points_1D(func_name, n_units, num_epochs, seed, T, length_scale,
         x_train = x_train_unsort[y_indices[::-1]]
         x_new_set = [np.random.uniform(0.62, 0.73, n_per_update), np.random.uniform(0.33, 0.48, n_per_update),
                      np.random.uniform(0.13, 0.24, n_per_update), np.random.uniform(0.35, 0.65, n_per_update)]
+
     else:
         print('not implemented')
 
     x_old = x_train[:n_init]
     y_old = y_train[:n_init]
+    y_new = None
+    x_new = None
     x     = np.copy(x_old)
     y     = np.copy(y_old)
 
@@ -92,19 +93,21 @@ def fitting_new_points_1D(func_name, n_units, num_epochs, seed, T, length_scale,
         else:
             itr_k = 0
 
-        # concdrop_train_loss_allepoch = []
-        # lccd_train_loss_allepoch = []
-        # lccd_train_logutil_allepoch = []
+        concdrop_train_results_allepoch = []
+        concdrop_val_results_allepoch = []
 
-        concdrop_val_loss_allepoch = []
-        concdrop_val_loglike_allepoch = []
-        lccd_val_loss_allepoch = []
-        lccd_val_loglike_allepoch = []
+        lccd_train_results_allepoch = []
+        lccd_val_results_allepoch = []
+
+        epoch_list = []
 
         for epochs in range(50, num_epochs, epoch_interval):
+            epoch_list.append(epochs)
+            # -----------------------------------------------------------
+            # -- Train and Prediction with Conc Dropout Dropout Model ---
+            # -----------------------------------------------------------
 
-            # -- Train and Prediction with MC Dropout Model ---
-            start_train_time_mc = time.time()
+            start_train_time_concdrop = time.time()
             model_concdrop = MCCONCRETEDROP(num_epochs=epochs, n_units_1=n_units, n_units_2=n_units,
                                               n_units_3=n_units, length_scale=length_scale, T=T,
                                               mc_tau=mc_tau, regu=regul, rng=seed,
@@ -112,92 +115,83 @@ def fitting_new_points_1D(func_name, n_units, num_epochs, seed, T, length_scale,
 
             # Train
             concdrop_train_mse_loss = model_concdrop.train(x, y.flatten(), itr=itr_k, saving_path=saving_model_path)
-            train_time_mc = time.time() - start_train_time_mc
-            start_predict_time_mc = time.time()
+            train_time_concdrop = time.time() - start_train_time_concdrop
+            start_predict_time_concdrop = time.time()
+
             # Predict
             m_concdrop, v_concdrop, ev_concdrop, av_concdrop, concdrop_val_loglike_per_point, concdrop_val_loss = model_concdrop.validate(x_grid, fvals)
-            predict_time_mc = time.time() - start_predict_time_mc
+            predict_time_concdrop = time.time() - start_predict_time_concdrop
 
-            concdrop_val_loss_allepoch.append(concdrop_val_loss)
-            concdrop_val_loglike_allepoch.append(concdrop_val_loglike_per_point)
+            # Store results
+            concdrop_train_results = [concdrop_train_mse_loss, train_time_concdrop]
+            concdrop_train_results_allepoch.append(concdrop_train_results)
 
-            # -- Train and Prediction with LCCD with MC Dropout mode and Se_y Util ---
-            util_set = [util_str]
+            concdrop_val_results = [m_concdrop, v_concdrop, ev_concdrop, av_concdrop, concdrop_val_loglike_per_point, concdrop_val_loss, predict_time_concdrop]
+            concdrop_val_results_allepoch.append(concdrop_val_results)
 
-            m_lccd_set = []
-            v_lccd_set = []
-            ev_lccd_set = []
-            av_lccd_set = []
+            # ----------------------------------------------------------------
+            # -- Train and Prediction with LCCD with Conc Dropout and Util ---
+            # ----------------------------------------------------------------
 
-            lccd_train_time = []
-            lccd_pred_time = []
 
-            for u in util_set:
-                start_train_time_lccd = time.time()
-                model_lccd_u = LCCD(num_epochs=epochs, n_units_1=n_units, n_units_2=n_units, n_units_3=n_units,
-                                     length_scale=length_scale, T=T, util_type=u,
-                                     mc_tau=mc_tau, regu=regul, rng=seed, actv=act_func,
-                                     normalize_input=normalise, normalize_output=normalise)
-                # Train
-                lccd_train_mse_loss, lccd_train_logutil, log_gain_average = \
-                    model_lccd_u.train(x, y.flatten(), itr=itr_k, n_per_itr=n_per_update, saving_path=saving_model_path)
+            start_train_time_lccd = time.time()
+            model_lccd_u = LCCD(num_epochs=epochs, n_units_1=n_units, n_units_2=n_units, n_units_3=n_units,
+                                 length_scale=length_scale, T=T, util_type=util_str,
+                                 mc_tau=mc_tau, regu=regul, rng=seed, actv=act_func,
+                                 normalize_input=normalise, normalize_output=normalise)
+            # Train
+            lccd_train_mse_loss, lccd_train_logutil, log_gain_average = \
+                model_lccd_u.train(x, y.flatten(), itr=itr_k, n_per_itr=n_per_update, saving_path=saving_model_path)
 
-                train_time_lccd = time.time() - start_train_time_lccd
+            train_time_lccd = time.time() - start_train_time_lccd
 
-                start_predict_time_lccd= time.time()
-                # Predict
-                m_lccd_u, v_lccd_u, ev_lccd_u, av_lccd_u, lccd_val_loglike_per_point, lccd_val_loss = model_lccd_u.validate(x_grid, fvals)
-                predict_time_lccd = time.time() - start_predict_time_lccd
+            start_predict_time_lccd= time.time()
+            # Predict
+            m_lccd_u, v_lccd_u, ev_lccd_u, av_lccd_u, lccd_val_loglike_per_point, lccd_val_loss = model_lccd_u.validate(x_grid, fvals)
+            predict_time_lccd = time.time() - start_predict_time_lccd
 
-                m_lccd_set.append(m_lccd_u)
-                v_lccd_set.append(v_lccd_u)
-                ev_lccd_set.append(ev_lccd_u)
-                av_lccd_set.append(av_lccd_u)
+            # Store results
+            lccd_train_results = [lccd_train_mse_loss, lccd_train_logutil, log_gain_average, train_time_lccd]
+            lccd_train_results_allepoch.append(lccd_train_results)
 
-                lccd_val_loss_allepoch.append(lccd_val_loss)
-                lccd_val_loglike_allepoch.append(lccd_val_loglike_per_point)
+            lccd_val_results = [m_lccd_u, v_lccd_u, ev_lccd_u, av_lccd_u, lccd_val_loglike_per_point, lccd_val_loss, predict_time_lccd]
+            lccd_val_results_allepoch.append(lccd_val_results)
 
-                lccd_train_time.append(train_time_lccd)
-                lccd_pred_time.append(predict_time_lccd)
 
-        if save_loss:
-            # Save train and validation loss/ll of concrete dropout
-            concdrop_train_loss_path = os.path.join(saving_loss_path,
-                                                   f"concdrop_train_mes_loss_s{seed}_itr{k}_n{n_units}_e{num_epochs}")
-            concdrop_val_loss_path = os.path.join(saving_loss_path,
-                                                   f"concdrop_valid_loss_s{seed}_itr{k}_n{n_units}_e{num_epochs}")
-            concdrop_val_loglike_path = os.path.join(saving_loss_path,
-                                                   f"concdrop_valid_ll_s{seed}_itr{k}_n{n_units}_e{num_epochs}")
-            np.save(concdrop_train_loss_path, concdrop_train_mse_loss)
-            np.save(concdrop_val_loss_path, concdrop_val_loss_allepoch)
-            np.save(concdrop_val_loglike_path, concdrop_val_loglike_allepoch)
+            if save_results:
+                # Save train loss and validation loss/ll of concrete dropout
+                conc_results_path = os.path.join(save_results_path, f"concdrop_results_s{seed}_itr{k}_n{n_units}_e{num_epochs}")
 
-            # Save train losss and utils of LCCD and validation loss/ll of LCCD
-            lccd_train_loss_path = os.path.join(saving_loss_path,
-                                                 f"lccd_train_mes_loss_{u}_s{seed}_itr{k}_n{n_units}_e{num_epochs}")
-            lccd_train_logutil_path = os.path.join(saving_loss_path,
-                                                    f"lccd_train_logutil_{u}_s{seed}_itr{k}_n{n_units}_e{num_epochs}")
-            lccd_val_loss_path = os.path.join(saving_loss_path,
-                                                  f"lccd_valid_loss_{u}_s{seed}_itr{k}_n{n_units}_e{num_epochs}")
-            lccd_val_loglike_path = os.path.join(saving_loss_path,
-                                                     f"lccd_valid_ll_{u}_s{seed}_itr{k}_n{n_units}_e{num_epochs}")
+                # concdrop_train_results: train mse loss,train time
+                # concdrop_val_results: m, v, ev, av, ppp, val loss, predict time
+                conc_results = {'epoch_list': epoch_list,
+                                'train_results': concdrop_train_results_allepoch,
+                                'val_results': concdrop_val_results_allepoch}
+                with open(conc_results_path, 'wb') as conc_file:
+                    pickle.dump(conc_results, conc_file)
 
-            np.save(lccd_train_loss_path, lccd_train_mse_loss)
-            np.save(lccd_train_logutil_path, lccd_train_logutil)
-            np.save(lccd_val_loss_path, lccd_val_loss_allepoch)
-            np.save(lccd_val_loglike_path, lccd_val_loglike_allepoch)
+                # Save train loss and utils of LCCD and validation loss/ll of LCCD
+                lccd_results_path = os.path.join(save_results_path, f"lccd_{util_str}_results_s{seed}_itr{k}_n{n_units}_e{num_epochs}")
 
-        # Store all the timing
-        train_time = [train_time_mc] + lccd_train_time
-        predict_time = [predict_time_mc] + lccd_pred_time
+                # lccd_train_results: train mse loss, train logutil, log gain for each data point, train time
+                # lccd_val_results: m, v, ev, av, ppp, val loss, predict time
+                lccd_results = {'epoch_list': epoch_list,
+                                'train_results': lccd_train_results_allepoch,
+                                'val_results': lccd_val_results_allepoch,
+                                'y_old': y_old,
+                                'y_new': y_new}
 
-        # -- Plot Results ---
-        subplot_titles = [f'Conc Dropout t={k}',f'LCCD{util_set[0]} t={k}']
-        pred_means = [m_concdrop] + m_lccd_set
-        pred_var = [v_concdrop] + v_lccd_set
-        pred_e_var = [ev_concdrop] + ev_lccd_set
-        pred_a_var = [av_concdrop] + av_lccd_set
+                with open(lccd_results_path, 'wb') as lccd_file:
+                    pickle.dump(lccd_results, lccd_file)
 
+        # -- Plot Final Epoch Results ---
+        subplot_titles = [f'Conc Dropout t={k}',f'LCCD{util_str} t={k}']
+        pred_means = [m_concdrop, m_lccd_u]
+        pred_var = [v_concdrop, v_lccd_u]
+        pred_e_var = [ev_concdrop, ev_lccd_u]
+        pred_a_var = [av_concdrop, av_lccd_u]
+        train_time = [train_time_concdrop, train_time_lccd]
+        predict_time = [predict_time_concdrop, predict_time_lccd]
         for i in range(len(pred_means)):
             x_grid_plot = x_grid.flatten()
             m = pred_means[i].flatten()
@@ -214,28 +208,28 @@ def fitting_new_points_1D(func_name, n_units, num_epochs, seed, T, length_scale,
                 axes[i, k].plot(x_old, y_old, "ko")
                 axes[i, k].plot(x_new, y_new, "r^")
                 axes_loggain = axes[-1, k]
-                axes_loggain.set_title(f'log gain {u}')
+                axes_loggain.set_title(f'log gain {util_str}')
                 # log_gain_average_off = log_gain_average + 0.05
                 log_gain_average_off = log_gain_average
                 axes_loggain.bar(x_old.flatten(), log_gain_average_off.flatten()[:-n_per_update],
                                  bar_width, alpha=opaticity, color='k', edgecolor='k')
                 axes_loggain.bar(x_new.flatten(), log_gain_average_off.flatten()[-n_per_update],
                                  bar_width, alpha=opaticity, color='r',edgecolor='r')
-                log_gain_average_pos = log_gain_average_off[np.where(log_gain_average_off>0)]
-                axes_loggain.set_ylim([np.min(log_gain_average_pos)-0.05, np.max(log_gain_average_pos)+0.05])
+                # log_gain_average_pos = log_gain_average_off[np.where(log_gain_average_off>0)]
+                # axes_loggain.set_ylim([np.min(log_gain_average_pos)-0.05, np.max(log_gain_average_pos)+0.05])
 
                 # axes_loggain.set_ylim([0, 1])
             else:
                 axes[i, k].plot(x_old, y_old, "r^")
                 axes_loggain = axes[-1, k]
-                axes_loggain.set_title(f'log gain {u}')
+                axes_loggain.set_title(f'log gain {util_str}')
                 # log_gain_average_off = log_gain_average + 0.05
                 log_gain_average_off = log_gain_average
 
                 axes_loggain.bar(x.flatten(), log_gain_average_off.flatten(), bar_width, alpha=opaticity, color='r',
                                  edgecolor='r')
-                log_gain_average_pos = log_gain_average_off[np.where(log_gain_average_off>0)]
-                axes_loggain.set_ylim([np.min(log_gain_average_pos)-0.05, np.max(log_gain_average_pos)+0.05])
+                # log_gain_average_pos = log_gain_average_off[np.where(log_gain_average_off>0)]
+                # axes_loggain.set_ylim([np.min(log_gain_average_pos)-0.05, np.max(log_gain_average_pos)+0.05])
 
             axes[i, k].plot(x_grid_plot, pred_means[i], "blue")
             # axes[i, k].fill_between(x_grid_plot, m + np.sqrt(v), m - np.sqrt(v), color="blue", alpha=0.2)
@@ -249,8 +243,6 @@ def fitting_new_points_1D(func_name, n_units, num_epochs, seed, T, length_scale,
 
         # bar plot for log conditional gain for each data point averaged over all epoches
         # axes_loggain = axes[-1, k].twinx()
-
-
         x_old = np.copy(x)
         y_old = np.copy(y)
         # Generate new data
@@ -264,9 +256,9 @@ def fitting_new_points_1D(func_name, n_units, num_epochs, seed, T, length_scale,
     plt.tight_layout()
     plt.show()
 
-    fig_save_path = os.path.join(saving_path, f'util{u}_s{seed}_lccd_warm_{warm_start}_{func_name}_nunits={n_units}' \
+    fig_save_path = os.path.join(saving_path, f'util{util_str}_s{seed}_lccd_warm_{warm_start}_{func_name}_nunits={n_units}' \
            f'_nepochs={num_epochs}_n_init={n_init}_act={act_func}_l=1e-1_total_itr_{total_itr}')
-    if save_loss:
+    if save_results:
         figure.savefig(fig_save_path + ".pdf", bbox_inches='tight')
 
     if display_time:
@@ -276,9 +268,9 @@ def fitting_new_points_1D(func_name, n_units, num_epochs, seed, T, length_scale,
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Run BayesOpt Experiments")
     parser.add_argument('-n', '--n_units', help='Number of neurons per layer',
-                        default=10, type=int)
+                        default=50, type=int)
     parser.add_argument('-e', '--n_epochs', help='Number of training epoches',
-                        default=2000, type=int)
+                        default=5000, type=int)
     parser.add_argument('-s', '--seed', help='Random seeds [0,6,11,12,13,23,29]',
                         default=42, type=int)
     parser.add_argument('-t', '--samples', help='MC samples for prediction',
@@ -292,15 +284,17 @@ if __name__ == '__main__':
     parser.add_argument('-m', '--mc_tau', help='Learn tau empirically using MC samples during training',
                         default=False, type=bool)
     parser.add_argument('-r', '--regul', help='Add regularisation to training losses',
-                        default=False, type=bool)
+                        default=True, type=bool)
     parser.add_argument('-c', '--continue_training', help='Cold start (False) or Warm start (True)',
                         default=True, type=bool)
     parser.add_argument('-u', '--utility_type', help='Utlity function type',
-                        default='se_yclip', type=str)
+                        default='se_ytrue_clip', type=str)
     parser.add_argument('-a', '--actv_func', help='Activation function',
                         default='tanh', type=str)
     parser.add_argument('-f', '--func_name', help='Test function',
                         default='gramcy1D_yval', type=str)
+    parser.add_argument('-nv', '--n_interval', help='Epoch interval to run validation',
+                        default=4940, type=int)
 
     args = parser.parse_args()
     print(f"Got arguments: \n{args}")
@@ -317,8 +311,9 @@ if __name__ == '__main__':
     util = args.utility_type
     actv_func = args.actv_func
     func = args.func_name
+    n_interval = args.n_interval
 
     fitting_new_points_1D(func_name= func, n_units=n_units, num_epochs=n_epochs, seed=s, T=T,
                           length_scale=ls, n_init=n_init, mc_tau = mc_tau, regul = regul, warm_start = warm,
-                          util_str=util, activation = actv_func, n_per_update=n_new)
+                          util_str=util, activation = actv_func, n_per_update=n_new, epoch_interval=n_interval)
 
