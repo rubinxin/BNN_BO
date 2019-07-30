@@ -78,7 +78,8 @@ def heteroscedastic_loss(true, mean, log_var):
 
 class Net(nn.Module):
     def __init__(self, n_inputs, n_units=[50, 50, 50],
-                 weight_regularizer=1e-6, dropout_regularizer=1e-5, actv='tanh'):
+                 weight_regularizer=1e-6, dropout_regularizer=1e-5, actv='tanh',
+                 p_min=0.1, p_max=0.1):
         super(Net, self).__init__()
         self.linear1 = nn.Linear(n_inputs, n_units[0])
         self.linear2 = nn.Linear(n_units[0], n_units[1])
@@ -87,15 +88,20 @@ class Net(nn.Module):
         self.out_logvar = nn.Linear(n_units[2], 1)
 
         self.conc_drop1 = ConcreteDropout(weight_regularizer=weight_regularizer,
-                                          dropout_regularizer=dropout_regularizer)
+                                          dropout_regularizer=dropout_regularizer,
+                                          init_min=p_min, init_max=p_max)
         self.conc_drop2 = ConcreteDropout(weight_regularizer=weight_regularizer,
-                                          dropout_regularizer=dropout_regularizer)
+                                          dropout_regularizer=dropout_regularizer,
+                                          init_min=p_min, init_max=p_max)
         self.conc_drop3 = ConcreteDropout(weight_regularizer=weight_regularizer,
-                                          dropout_regularizer=dropout_regularizer)
+                                          dropout_regularizer=dropout_regularizer,
+                                          init_min=p_min, init_max=p_max)
         self.conc_drop_mu = ConcreteDropout(weight_regularizer=weight_regularizer,
-                                            dropout_regularizer=dropout_regularizer)
+                                            dropout_regularizer=dropout_regularizer,
+                                            init_min=p_min, init_max=p_max)
         self.conc_drop_logvar = ConcreteDropout(weight_regularizer=weight_regularizer,
-                                                dropout_regularizer=dropout_regularizer)
+                                                dropout_regularizer=dropout_regularizer,
+                                                init_min=p_min, init_max=p_max)
 
         if actv == 'relu':
             self.activation = nn.ReLU()
@@ -123,7 +129,8 @@ class MCCONCRETEDROP(BaseModel):
                  learning_rate=0.01,
                  adapt_epoch=5000, n_units_1=50, n_units_2=50, n_units_3=50,
                  length_scale = 1e-4, T = 100, regu = False, mc_tau=False,
-                 normalize_input=True, normalize_output=True, rng=None, gpu=True, actv='tanh'):
+                 normalize_input=True, normalize_output=True, rng=None, gpu=True, actv='tanh',
+                 init_p_min = 0.1, init_p_max = 0.1):
         """
         This module performs MC Dropout for a fully connected
         feed forward neural network.
@@ -177,6 +184,8 @@ class MCCONCRETEDROP(BaseModel):
         self.normalize_input = normalize_input
         self.normalize_output = normalize_output
         self.actv = actv
+        self.p_min = init_p_min
+        self.p_max = init_p_max
 
         self.num_epochs = num_epochs
         self.batch_size = batch_size
@@ -233,7 +242,7 @@ class MCCONCRETEDROP(BaseModel):
         wr = self.length_scale ** 2. / N
         dr = 2. / N
         network = Net(n_inputs=features, n_units=[self.n_units_1, self.n_units_2, self.n_units_3],
-                      weight_regularizer=wr, dropout_regularizer=dr,  actv=self.actv)
+                      weight_regularizer=wr, dropout_regularizer=dr,  actv=self.actv, p_min=self.p_min, p_max=self.p_max)
         optimizer = optim.Adam(network.parameters(),
                                lr=self.init_learning_rate)
 

@@ -13,70 +13,6 @@ from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean
 from pybnn.util.val_eval_metrics import val_test
 from pybnn.util.loss_calibration import cal_loss,utility, heteroscedastic_loss
 
-
-# def utility(util_type='recent', Y_train=0):
-#     '''Inputs:
-#     y_true: true values (N,D)
-#     y_pred: predicted values (N,D)
-#     utility_type: the type of utility function to be used for maximisation
-#     y_ob: training data
-#     '''
-#
-#     def util(y_pred_samples, H_x, y_true_batch):
-#
-#         threshold = np.mean(Y_train)
-#         # threshold = np.percentile(Y_train, 50)
-#
-#         # if util_type == 'se_y':
-#         #     u = 1 - (y_pred_samples - H_x) ** 2 - y_pred_samples
-#         #     cond_gain_unscaled = torch.mean(u, 0)
-#         #     cond_gain = torch.exp(cond_gain_unscaled) + 1e-8
-#
-#         if util_type == 'se_y':
-#             cond_gain_unscaled = 1 - (y_true_batch - H_x) ** 2 - y_true_batch
-#             cond_gain = torch.exp(cond_gain_unscaled) + 1e-8
-#
-#         elif util_type == 'se_yclip':
-#             u_unscaled = - (y_true_batch - H_x) ** 2 + torch.exp(-y_true_batch)
-#             u_scaled = 1 + torch.exp(u_unscaled)
-#             u_clip = torch.ones_like(y_true_batch)
-#             cond_gain = torch.where(y_true_batch < threshold, u_scaled, u_clip)
-#         # elif util_type == 'se_yclip':
-#         #     u_unscaled = - (y_pred_samples - H_x) ** 2 - y_pred_samples
-#         #     u_scaled = 1 + torch.exp(u_unscaled)
-#         #     u_clip = torch.ones_like(y_pred_samples)
-#         #     u = torch.where(y_true_batch < threshold, u_scaled, u_clip)
-#         #     cond_gain = torch.mean(u, 0)
-#         elif util_type == 'se_prod_yclip':
-#             u_unscaled = - (y_true_batch - H_x) ** 2 * torch.exp( y_true_batch) + torch.exp(-y_true_batch)
-#             u_scaled = 1 + torch.exp(u_unscaled)
-#             u_clip = torch.ones_like(y_true_batch)
-#             cond_gain = torch.where(y_true_batch < threshold, u_scaled, u_clip)
-#         # elif util_type == 'se_prod_yclip':
-#         #     u_unscaled = - (y_pred_samples - H_x) ** 2 * torch.exp(y_pred_samples)
-#         #     u_scaled = 1 + torch.exp(u_unscaled)
-#         #     u_clip = torch.ones_like(y_pred_samples)
-#         #     u = torch.where(y_true_batch < threshold, u_scaled, u_clip)
-#         #     cond_gain = torch.mean(u, 0)
-#         return cond_gain
-#
-#     return util
-#
-# def cal_loss(y_true, output, util, H_x, y_pred_samples, log_var, regularization=None):
-#     a = 4.0
-#     if regularization is None:
-#         mse_loss = heteroscedastic_loss(y_true, output, log_var)
-#     else:
-#         mse_loss = heteroscedastic_loss(y_true, output, log_var) + regularization
-#
-#     log_condi_gain = torch.log(util(y_pred_samples, H_x, y_true))
-#
-#     utility_value = a * log_condi_gain.mean()
-#     calibrated_loss = mse_loss - utility_value
-#
-#     return calibrated_loss, mse_loss, log_condi_gain
-
-
 class ConcreteDropout(nn.Module):
     def __init__(self, weight_regularizer=1e-6,
                  dropout_regularizer=1e-5, init_min=0.1, init_max=0.1):
@@ -135,7 +71,8 @@ class ConcreteDropout(nn.Module):
 
 class Net(nn.Module):
     def __init__(self, n_inputs, n_units=[50, 50, 50],
-                 weight_regularizer=1e-6, dropout_regularizer=1e-5, actv='tanh'):
+                 weight_regularizer=1e-6, dropout_regularizer=1e-5, actv='tanh',
+                 p_min=0.1, p_max=0.1):
         super(Net, self).__init__()
         self.linear1 = nn.Linear(n_inputs, n_units[0])
         self.linear2 = nn.Linear(n_units[0], n_units[1])
@@ -144,15 +81,20 @@ class Net(nn.Module):
         self.out_logvar = nn.Linear(n_units[2], 1)
 
         self.conc_drop1 = ConcreteDropout(weight_regularizer=weight_regularizer,
-                                          dropout_regularizer=dropout_regularizer)
+                                          dropout_regularizer=dropout_regularizer,
+                                          init_min=p_min, init_max=p_max)
         self.conc_drop2 = ConcreteDropout(weight_regularizer=weight_regularizer,
-                                          dropout_regularizer=dropout_regularizer)
+                                          dropout_regularizer=dropout_regularizer,
+                                          init_min=p_min, init_max=p_max)
         self.conc_drop3 = ConcreteDropout(weight_regularizer=weight_regularizer,
-                                          dropout_regularizer=dropout_regularizer)
+                                          dropout_regularizer=dropout_regularizer,
+                                          init_min=p_min, init_max=p_max)
         self.conc_drop_mu = ConcreteDropout(weight_regularizer=weight_regularizer,
-                                            dropout_regularizer=dropout_regularizer)
+                                            dropout_regularizer=dropout_regularizer,
+                                            init_min=p_min, init_max=p_max)
         self.conc_drop_logvar = ConcreteDropout(weight_regularizer=weight_regularizer,
-                                                dropout_regularizer=dropout_regularizer)
+                                                dropout_regularizer=dropout_regularizer,
+                                                init_min=p_min, init_max=p_max)
         if actv == 'relu':
             self.activation = nn.ReLU()
         else:
@@ -178,7 +120,8 @@ class LCCD(BaseModel):
                  adapt_epoch=5000, n_units_1=50, n_units_2=50, n_units_3=50,
                  length_scale = 1e-1, T = 100, mc_tau=False, regu=False,
                  normalize_input=True, normalize_output=True, rng=42,
-                 loss_cal=True, lc_burn=1, util_type='se_y', gpu=True, actv='tanh'):
+                 loss_cal=True, lc_burn=1, util_type='se_y', gpu=True, actv='tanh',
+                 init_p_min=0.1, init_p_max=0.1):
         """
         This module performs MC Dropout for a fully connected
         feed forward neural network.
@@ -236,6 +179,9 @@ class LCCD(BaseModel):
         self.mc_tau = mc_tau
         self.regu = regu
         self.actv = actv
+
+        self.p_min = init_p_min
+        self.p_max = init_p_max
 
         self.T = T
         self.normalize_input = normalize_input
@@ -295,7 +241,8 @@ class LCCD(BaseModel):
         dr = 2. / N
 
         network = Net(n_inputs=features, n_units=[self.n_units_1, self.n_units_2, self.n_units_3],
-                      weight_regularizer=wr, dropout_regularizer=dr, actv=self.actv)
+                      weight_regularizer=wr, dropout_regularizer=dr, actv=self.actv,
+                      p_min=self.p_min, p_max=self.p_max)
 
         if itr > 0:
             model_loading_path = os.path.join(saving_path,
@@ -321,7 +268,7 @@ class LCCD(BaseModel):
         network.train()
 
         for epoch in range(self.num_epochs):
-            print(epoch)
+            # print(epoch)
             epoch_start_time = time.time()
 
             train_err = 0
@@ -394,13 +341,15 @@ class LCCD(BaseModel):
                 train_batches += 1
 
             if self.loss_cal and epoch >= (self.lc_burn - 1):
-                mc_samples = [network(inputs) for _ in range(10)]
+                mc_samples = [network(inputs) for _ in range(20)]
                 y_pred_samples = torch.stack([tup[0] for tup in mc_samples])
 
                 if self.util_type == 'se_prod_y' or self.util_type == 'se_prod_yclip':
                     numerator = torch.sum(y_pred_samples * torch.exp(y_pred_samples),0)
                     denominator = torch.sum(torch.exp(y_pred_samples),0)
                     h_x = numerator / denominator
+                elif self.util_type == 'linear_se_ysample_clip' or self.util_type == 'se_ysample_clip':
+                    h_x = targets
                 else:
                     y_pred_mean = torch.mean(y_pred_samples, 0)
                     h_x = y_pred_mean

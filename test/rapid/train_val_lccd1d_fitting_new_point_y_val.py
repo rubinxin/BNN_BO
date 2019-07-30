@@ -27,7 +27,7 @@ def fitting_new_points_1D(func_name, n_units, num_epochs, seed, T, length_scale,
             y = 3 / 4 * f + 1 / 4
             return y
 
-    saving_path = f'data_debug/{func_name}_L{3}_regu{regul}/'
+    saving_path = f'data_debug/{func_name}_L{3}_regu{regul}_n{n_units}/'
     if not os.path.exists(saving_path):
         os.makedirs(saving_path)
 
@@ -274,7 +274,7 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--seed', help='Random seeds [0,6,11,12,13,23,29]',
                         default=42, type=int)
     parser.add_argument('-t', '--samples', help='MC samples for prediction',
-                        default=100, type=int)
+                        default=50, type=int)
     parser.add_argument('-ne', '--new', help='Number of new points per iteration',
                         default=5, type=int)
     parser.add_argument('-l', '--ls', help='length scale value',
@@ -288,7 +288,7 @@ if __name__ == '__main__':
     parser.add_argument('-c', '--continue_training', help='Cold start (False) or Warm start (True)',
                         default=True, type=bool)
     parser.add_argument('-u', '--utility_type', help='Utlity function type',
-                        default='se_ytrue_clip', type=str)
+                        default='linear_se_ytrue_clip', type=str)
     parser.add_argument('-a', '--actv_func', help='Activation function',
                         default='tanh', type=str)
     parser.add_argument('-f', '--func_name', help='Test function',

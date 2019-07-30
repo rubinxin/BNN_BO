@@ -110,7 +110,6 @@ class Bayes_opt():
         self.e = np.exp(1)
 
         #  Fit GP model to the data
-
         self.model._update_model(self.X, self.Y)
 
 
@@ -122,7 +121,7 @@ class Bayes_opt():
             x_next_batch, acqu_value_batch = self.query_strategy.get_next(self.X, self.Y)
             max_acqu_value = np.max(acqu_value_batch)
             t_opt_acq = time.time()- start_time
-            time_record[k,0] =  t_opt_acq
+            time_record[k,0] = t_opt_acq
 
             y_next_batch = self.func(x_next_batch) + np.random.normal(0, np.sqrt(self.noise_var), (x_next_batch.shape[0],1))
 

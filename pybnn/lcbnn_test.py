@@ -9,9 +9,8 @@ from torch.autograd import Variable
 import os
 from pybnn.base_model import BaseModel
 from pybnn.util.normalization import zero_mean_unit_var_normalization, zero_mean_unit_var_denormalization
-from pybnn.util.loss_calibration import cal_loss,utility
+from pybnn.util.loss_calibration import cal_loss, utility
 from pybnn.util.val_eval_metrics import val_test
-from pybnn.util.loss_calibration import utility
 
 
 def cal_loss(y_true, y_pred, util, H_x, y_pred_samples):
@@ -261,14 +260,15 @@ class LCBNN(BaseModel):
                 train_batches += 1
 
                 if self.loss_cal and epoch >= (self.lc_burn - 1):
-                    y_pred_samples = [network(inputs) for _ in range(30)]
+                    y_pred_samples = [network(inputs) for _ in range(10)]
                     y_pred_samples = torch.stack(y_pred_samples)
 
                     if self.util_type == 'se_prod_y' or self.util_type == 'se_prod_yclip':
                         numerator = torch.sum(y_pred_samples * torch.exp(y_pred_samples),0)
                         denominator = torch.sum(torch.exp(y_pred_samples),0)
                         h_x = numerator / denominator
-
+                    elif self.util_type == 'linear_se_ysample_clip' or self.util_type == 'se_ysample_clip':
+                        h_x = targets
                     else:
                         y_pred_mean = torch.mean(y_pred_samples, 0)
                         h_x = y_pred_mean

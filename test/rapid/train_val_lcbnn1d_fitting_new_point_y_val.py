@@ -27,7 +27,7 @@ def fitting_new_points_1D(func_name, n_units, num_epochs, seed, T, length_scale,
             y = 3 / 4 * f + 1 / 4
             return y
 
-    saving_path = f'data_debug/{func_name}_L{3}_regu{regul}_lcbnn_{drop_p}/'
+    saving_path = f'data_debug/{func_name}_L{3}_regu{regul}_lcbnn_{drop_p}_n{n_units}/'
     if not os.path.exists(saving_path):
         os.makedirs(saving_path)
 

@@ -7,7 +7,9 @@ Some of these are based on the following library:
     BayesOpt, an efficient C++ library for Bayesian optimization.
 """
 from typing import Tuple, Callable
-
+import matplotlib
+# matplotlib.use('TkAgg')
+# import matplotlib.pyplot as plt
 import numpy as np
 import GPy
 
@@ -177,6 +179,22 @@ def ackley_small(x):
     Ackley function / 20
     """
     return ackley(x) / 20
+
+def rastrigin(x):
+    """
+    Rastrigin function
+    x has to be 2D (NxD)
+    Bounds = -1, 1
+    min x = np.zeros
+    y range = [0, 80]
+    y = 0
+    """
+    x = np.atleast_2d(x).copy()
+    x *= 5.12  # rescale x to [-5.12, 5.12]
+    n = x.shape[1]
+    c = 2 * np.pi
+    y = 10.0 * n +  np.sum( x**2 - 10.0 * np.cos(c * x), 1)
+    return y[:, None]
 
 def branin(x):
     """
@@ -413,6 +431,16 @@ def get_function(target_func, big=False) \
         min_val = f(min_loc)
         X_LIM = np.vstack([np.array([-1., 1])] * dim)
 
+    elif target_func.startswith('rastrigin'):
+        dim = get_dim_from_name(target_func)
+        if dim is None:
+            dim = 2
+        min_loc = np.zeros(dim)
+        f = rastrigin
+        min_val = f(min_loc)
+        X_LIM = np.vstack([np.array([-1., 1])] * dim)
+
+
     elif target_func.startswith('rosenbrock-2d'):
 
         if not big:
@@ -464,3 +492,13 @@ def get_dim_from_name(target_func):
     else:
         dim = None
     return dim
+
+# if __name__ == '__main__':
+#     x1, x2 = np.mgrid[-1:1:50j, -1:1:50j]
+#     grid = np.vstack((x1.flatten(), x2.flatten())).T
+#     fvals = rastrigin(grid)/10
+#     fig = plt.figure()
+#     ax = fig.gca(projection='3d')
+#     print(f'fopt={rastrigin(np.atleast_2d([0.0,0.0]))}')
+#     ax_i = ax.plot_surface(x1, x2, fvals.reshape(50, 50))
+#     plt.show()
