@@ -263,12 +263,7 @@ class MCDROP(BaseModel):
 
         # mc_time = time.time() - start_mc
         # print(f'mc_time={mc_time}')
-
         tau = self.length_scale**2 * (1.0 - self.model.dropout_p) / (2. * self.model.decay * self.X.shape[0])
-        # MC_pred_mean = np.mean(Yt_hat, 0)  # N x 1
-        # Second_moment = np.mean(Yt_hat ** 2, 0) # N x 1
-        # MC_pred_var = Second_moment + 1./ tau - (MC_pred_mean ** 2)
-
         MC_pred_mean = Yt_hat.mean(axis=1)
         MC_pred_var = Yt_hat.var(axis=1) + 1./tau
 

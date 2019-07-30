@@ -19,14 +19,13 @@ Run Bayesian Optimisation Experiments
 def BNN_BO_Exps(obj_func, model_type, bo_method, batch_option, batch_size,
                 num_iter=40, seed_size=20, util_type='se_y', activation='tanh'):
 
-    #  Specify the objective function and parameters (noise variance, input dimension, initial observation
+    #  Specify the objective function and parameters (noise variance, input dimension, number of initial observation)
     f, x_bounds, _, true_fmin = get_function(obj_func)
     var_noise = 1.0e-10
     d = x_bounds.shape[0]
     n_init = d*10
 
     saving_path = 'data/' + obj_func
-    # saving_path = '/data/engs-bayesian-machine-learning/sedm4615/BNN_BO_data/'  + obj_func
 
     if not os.path.exists(saving_path):
         os.makedirs(saving_path)
@@ -106,7 +105,7 @@ if __name__ == '__main__':
     parser.add_argument('-f', '--func', help='Objective function',
                         default='egg-2d', type=str)
     parser.add_argument('-m', '--model', help='Surrogate model: GP or MCDROP or MCCONC or DNGO or BOHAM or LCBNN',
-                        default='MCDROP', type=str)
+                        default='MCCONC', type=str)
     parser.add_argument('-acq', '--acq_func', help='Acquisition function: LCB, EI, MES',
                         default='LCB', type=str)
     parser.add_argument('-bm', '--batch_opt', help='Batch option: CL, KB',
