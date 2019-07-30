@@ -254,6 +254,7 @@ class MCCONCRETEDROP(BaseModel):
 
         # Start training
         lc = np.zeros([self.num_epochs])
+        network.train()
         for epoch in range(self.num_epochs):
 
             epoch_start_time = time.time()
@@ -356,32 +357,21 @@ class MCCONCRETEDROP(BaseModel):
         T     = self.T
         # model.eval()
         # MC_samples : list T x N x 1
-        # Yt_hat = np.array([model(torch.Tensor(X_)).data.numpy() for _ in range(T)])
         # start_mc=time.time()
         gpu_test = False
         if gpu_test:
             X_tensor = Variable(torch.FloatTensor(X_)).to(self.device)
             MC_samples = [model(X_tensor) for _ in range(T)]
             means = torch.stack([tup[0] for tup in MC_samples]).view(T, X_.shape[0]).cpu().data.numpy()
-            # logvar = torch.stack([tup[1] for tup in MC_samples]).view(T, X_.shape[0]).cpu().data.numpy()
         else:
             model.cpu()
             MC_samples = [model(Variable(torch.FloatTensor(X_))) for _ in range(T)]
             means = torch.stack([tup[0] for tup in MC_samples]).view(T, X_.shape[0]).data.numpy()
-            # # logvar = torch.stack([tup[1] for tup in MC_samples]).view(T, X_.shape[0]).data.numpy()
-            # MC_samples = [model(Variable(torch.FloatTensor(X_))) for _ in range(T)]
-            # means = torch.stack([model(Variable(torch.FloatTensor(X_)))[0] for _ in range(T)]).view(T, X_.shape[0]).data.numpy()
 
-        # mc_time = time.time() - start_mc
-        # print(f'mc_time={mc_time}')
-        # logvar = np.mean(logvar,0)
-        # aleatoric_uncertainty = np.exp(logvar).mean(0)
-        # epistemic_uncertainty = np.var(means, 0).mean(0)
         aleatoric_uncertainty = self.aleatoric_uncertainty
         MC_pred_mean = np.mean(means, 0)  # N x 1
         means_var  = np.var(means, 0)
         MC_pred_var = means_var + aleatoric_uncertainty
-        # MC_pred_var = means_var + np.mean(np.exp(logvar), 0)
 
         m = MC_pred_mean.flatten()
 

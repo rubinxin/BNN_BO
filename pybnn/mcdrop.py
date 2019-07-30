@@ -171,6 +171,7 @@ class MCDROP(BaseModel):
 
         # Start training
         lc = np.zeros([self.num_epochs])
+        network.train()
         for epoch in range(self.num_epochs):
 
             epoch_start_time = time.time()
@@ -248,7 +249,7 @@ class MCDROP(BaseModel):
 
         # Perform MC dropout
         model = self.model
-        model.eval()
+        model.train()
         T     = self.T
 
 
@@ -256,12 +257,8 @@ class MCDROP(BaseModel):
         # Yt_hat: T x N x 1
         if self.gpu:
             model.cpu()
-            # Yt_hat = np.array([model(Variable(torch.Tensor(X_))).data.numpy() for _ in range(T)])
             Yt_hat = np.hstack([model(Variable(torch.Tensor(X_[:, np.newaxis]))).data.numpy() for _ in range(T)])
-            # X_tensor = X_tensor.to(self.device)
-            # Yt_hat = np.hstack([model(Variable(torch.Tensor(X_[:, np.newaxis]))).cpu().data.numpy() for i in range(T)])
         else:
-            # Yt_hat = np.array([model(Variable(torch.Tensor(X_))).data.numpy() for _ in range(T)])
             Yt_hat = np.hstack([model(Variable(torch.Tensor(X_[:, np.newaxis]))).data.numpy() for _ in range(T)])
 
         # mc_time = time.time() - start_mc
