@@ -50,9 +50,9 @@ class Bayes_opt():
 
         # --- Param for NN models --- #
         mini_batch = 10
-        T = 100
+        T = 50
         l_s = 1e-1
-        n_epochs = 1000
+        n_epochs = 200
         activation = actv_func
 
         # Specify the model

@@ -106,7 +106,7 @@ if __name__ == '__main__':
     parser.add_argument('-f', '--func', help='Objective function',
                         default='egg-2d', type=str)
     parser.add_argument('-m', '--model', help='Surrogate model: GP or MCDROP or MCCONC or DNGO or BOHAM or LCBNN',
-                        default='LCCD', type=str)
+                        default='MCDROP', type=str)
     parser.add_argument('-acq', '--acq_func', help='Acquisition function: LCB, EI, MES',
                         default='LCB', type=str)
     parser.add_argument('-bm', '--batch_opt', help='Batch option: CL, KB',
