@@ -68,11 +68,11 @@ class Net(nn.Module):
 class LCBNN(BaseModel):
 
     def __init__(self, batch_size=10, num_epochs=500,
-                 learning_rate=0.01,
-                 adapt_epoch=5000, n_units_1=50, n_units_2=50, n_units_3=50,
+                 learning_rate=0.01, adapt_epoch=5000, n_units_1=50, n_units_2=50, n_units_3=50,
                  dropout_p=0.05, length_scale = 1e-1, weight_decay = 1e-6, T = 100,
-                 normalize_input=True, normalize_output=True, rng=None, weights=None,
-                 loss_cal=True, lc_burn=1, util_type='se_y',gpu=True, actv='tanh'):
+                 normalize_input=True, normalize_output=True, seed=None, weights=None,
+                 loss_cal=True, lc_burn=1, util_type='se_ytrue_clip',gpu=True, actv='tanh',
+                 model_saving_path='./'):
         """
         This module performs MC Dropout for a fully connected
         feed forward neural network.
@@ -107,15 +107,16 @@ class LCBNN(BaseModel):
             Random number generator
         """
 
-        if rng is None:
+        if seed is None:
             self.rng = np.random.RandomState(np.random.randint(0, 10000))
         else:
-            self.rng = np.random.RandomState(rng)
+            self.rng = np.random.RandomState(seed)
 
-        self.seed = rng
+        self.seed = seed
         torch.manual_seed(self.seed)
         np.random.seed(self.seed)
         torch.cuda.manual_seed(self.seed)
+
         self.X = None
         self.y = None
         self.network = None
@@ -145,9 +146,10 @@ class LCBNN(BaseModel):
         # Use GPU
         self.gpu = gpu
         self.device = torch.device("cuda: 0" if torch.cuda.is_available() else "cpu")
+        self.model_saving_path = model_saving_path
 
     @BaseModel._check_shapes_train
-    def train(self, X, y, itr=0, n_per_itr = 5, saving_path=None):
+    def train(self, X, y, itr=0):
         """
         Trains the model on the provided data.
 
@@ -176,6 +178,8 @@ class LCBNN(BaseModel):
             self.y = y
 
         self.y = self.y[:, None]
+        self.y_min = np.min(self.y)
+
         # print(f'mean_y_train={np.mean(self.y)}')
         # Check if we have enough points to create a minibatch otherwise use all data points
         if self.X.shape[0] <= self.batch_size:
@@ -190,10 +194,10 @@ class LCBNN(BaseModel):
                       n_units=[self.n_units_1, self.n_units_2, self.n_units_3], actv=self.actv)
 
         if itr > 0:
-            model_loading_path = os.path.join(saving_path,
+            model_load_path = os.path.join(self.model_saving_path,
                                               f'lcbnn_k={itr-1}_{self.actv}_{self.util_type}_'
                                               f'n{self.n_units_1}_e{self.num_epochs}.pt')
-            network.load_state_dict(torch.load(model_loading_path))  # TODO:check this
+            network.load_state_dict(torch.load(model_load_path))  # TODO:check this
 
         if self.gpu:
             network = network.to(self.device)
@@ -291,10 +295,11 @@ class LCBNN(BaseModel):
         self.model = network
 
         # Saving models
-        model_saving_path = os.path.join(saving_path,
-                                         f'lcbnn_k={itr}_{self.actv}_{self.util_type}_'
-                                         f'n{self.n_units_1}_e{self.num_epochs}.pt')
-        torch.save(network.state_dict(), model_saving_path)  # TODO:check this
+
+        model_save_path = os.path.join(self.model_saving_path,
+                                              f'lcbnn_k={itr}_{self.actv}_{self.util_type}_'
+                                              f'n{self.n_units_1}_e{self.num_epochs}.pt')
+        torch.save(network.state_dict(), model_save_path)  # TODO:check this
         print('lcbnn model saved')
 
         self.lc = lc
@@ -400,7 +405,7 @@ class LCBNN(BaseModel):
             e_v = e_v.flatten()
             a_v = a_v.flatten()
 
-            return m, v, e_v, a_v
+            return m, v
 
     @BaseModel._check_shapes_predict
     def validate(self, X_test, Y_test):

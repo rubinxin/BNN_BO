@@ -170,6 +170,7 @@ class DNGO(BaseModel):
             self.y = y
 
         self.y = self.y[:, None]
+        self.y_min = np.min(self.y)
 
         # Check if we have enough points to create a minibatch otherwise use all data points
         if self.X.shape[0] <= self.batch_size:

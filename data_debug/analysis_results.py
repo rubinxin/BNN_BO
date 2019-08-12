@@ -13,15 +13,16 @@ import pickle
 '''
 Test
 '''
-obj_func = 'egg-2d'        # all completed except DNGO, MCCONCrelu
-# obj_func = 'branin-2d'       # all completed except DNGO, LCCDtanh
-# obj_func = 'hartmann-6d'      # all completed DNGO
-# obj_func = 'ackley-10d'         # all completed except LCBNNtanhse_yseeds, DNGO
-# obj_func = 'michalewicz-10d'      # all imcomplete exc
+# obj_func = 'egg-2dtanh'
+# obj_func = 'rosenbrock-2dtanh'
+obj_func = 'hartmann-6dtanh'
+
 numEpoch = 1000
 batch_size = 1
 bo_method = 'LCB'
-models_all = ['LCBNNtanhse_yclip','LCBNNtanhse_prod_y','LCBNNtanh_old_se_prod_y','LCBNNtanhse_y']
+# models_all = ['DNGOtanh','MCDROPtanh','MCCONCtanh','LCBNNtanhse_ytrue_clip','LCCDtanhse_ytrue_clip']
+models_all = ['MCCONCtanh','LCCDtanhse_ytrue_clip']
+
 #
 indx = range(60)
 

@@ -276,7 +276,67 @@ def global_minimiser_cheap(func, lb, hb, X_ob, maximise= False, func_gradient=No
 
     return np.array([opt_location]), f_opt
 
-def optimise_acqu_func(acqu_func, bounds, X_ob, func_gradient=False, gridSize=10000, num_chunks = 25, n_start=1):
+def optimise_acqu_func_wrong(acqu_func, bounds, X_ob, gridSize=10000, num_chunks = 1):
+
+    # Turn acqu_func to be - acqu_func for minimisation
+    target_func = lambda x: - acqu_func._compute_acq(x)
+
+    d = bounds.shape[0]
+    # bounds: d x 2
+    Xgrid = np.tile(bounds[:,0], (gridSize, 1)) + np.tile((bounds[:,1] - bounds[:,0]), (gridSize, 1)) * np.random.rand(gridSize, d)
+    # Xgrid = np.vstack((Xgrid, X_ob))
+    X_chunks = np.split(Xgrid, num_chunks)
+    x_ob_chunk = X_ob[-200:,:]
+    X_chunks.append(x_ob_chunk)
+
+    results_list = []
+    for i, x_chunk in enumerate(X_chunks):
+        f_chunk = target_func(x_chunk)
+        results_list.append(f_chunk)
+
+    results = np.vstack(results_list)
+    # results = target_func(Xgrid)
+    top_candidates_idx = results.flatten().argsort()[:2] # give the smallest n_start values in the ascending order
+    random_starts = Xgrid[top_candidates_idx]
+    f_min = results[top_candidates_idx[0]]
+    opt_location = random_starts[0]
+
+    # for random_start in random_starts:
+    #     if func_gradient:
+    #         x, f_at_x, info = fmin_l_bfgs_b(target_func_with_gradient, random_start, bounds=bounds_opt, approx_grad=False)
+    #     else:
+    #         x, f_at_x, info = fmin_l_bfgs_b(target_func, random_start, bounds=bounds_opt, approx_grad=True)
+    #
+    #     if f_at_x < f_min:
+    #         f_min = f_at_x
+    #         opt_location = x
+    f_opt = -f_min
+
+    return np.array([opt_location]), f_opt
+
+
+def optimise_acqu_func(acqu_func, bounds, X_ob, gridSize=10000, n_start=2):
+    # Turn acqu_func to be - acqu_func for minimisation
+    target_func = lambda x: - acqu_func._compute_acq(x)
+
+    d = bounds.shape[0]
+    # bounds: d x 2
+    Xgrid = np.tile(bounds[:, 0], (gridSize, 1)) + np.tile((bounds[:, 1] - bounds[:, 0]),
+                                                           (gridSize, 1)) * np.random.rand(gridSize, d)
+    Xgrid = np.vstack((Xgrid, X_ob))
+
+    results = target_func(Xgrid)
+    top_candidates_idx = results.flatten().argsort()[
+                         :n_start]  # give the smallest n_start values in the ascending order
+    random_starts = Xgrid[top_candidates_idx]
+    f_min = results[top_candidates_idx[0]]
+    opt_location = random_starts[0]
+
+    f_opt = -f_min
+
+    return np.array([opt_location]), f_opt
+
+def optimise_acqu_func_exp(acqu_func, bounds, X_ob, func_gradient=False, gridSize=10000, num_chunks = 25, n_start=1):
 
     # Turn acqu_func to be - acqu_func for minimisation
     target_func = lambda x: - acqu_func._compute_acq(x)
@@ -290,16 +350,7 @@ def optimise_acqu_func(acqu_func, bounds, X_ob, func_gradient=False, gridSize=10
     # bounds: d x 2
     Xgrid = np.tile(bounds[:,0], (gridSize, 1)) + np.tile((bounds[:,1] - bounds[:,0]), (gridSize, 1)) * np.random.rand(gridSize, d)
     Xgrid = np.vstack((Xgrid, X_ob))
-    # X_chunks = np.split(Xgrid, num_chunks)
-    # x_ob_chunk = X_ob[-200:,:]
-    # X_chunks.append(x_ob_chunk)
-    #
-    # results_list = []
-    # for i, x_chunk in enumerate(X_chunks):
-    #     f_chunk = target_func(x_chunk)
-    #     results_list.append(f_chunk)
 
-    # results = np.vstack(results_list)
     results = target_func(Xgrid)
     top_candidates_idx = results.flatten().argsort()[:n_start] # give the smallest n_start values in the ascending order
     random_starts = Xgrid[top_candidates_idx]
@@ -319,6 +370,7 @@ def optimise_acqu_func(acqu_func, bounds, X_ob, func_gradient=False, gridSize=10
     f_opt = -f_min
 
     return np.array([opt_location]), f_opt
+
 
 def get_init_data(obj_func, noise_var, n_init, bounds):
     """

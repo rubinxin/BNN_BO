@@ -183,7 +183,7 @@ class LCCD(BaseModel):
                  adapt_epoch=5000, n_units_1=50, n_units_2=50, n_units_3=50,
                  length_scale = 1e-1, T = 100, mc_tau=False, regu=False,
                  normalize_input=True, normalize_output=True, rng=42, weights=None,
-                 loss_cal=True, lc_burn=1, util_type='se_y', gpu=True, actv='tanh'):
+                 loss_cal=True, lc_burn=1, util_type='se_ytrue_clip', gpu=True, actv='tanh'):
         """
         This module performs MC Dropout for a fully connected
         feed forward neural network.
@@ -308,6 +308,7 @@ class LCCD(BaseModel):
                                lr=self.init_learning_rate)
 
         # Start training
+        network.train()
         lc = np.zeros([self.num_epochs])
 
         if self.loss_cal:

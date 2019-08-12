@@ -49,3 +49,6 @@ class DNGOWrap(BaseModel):
         Returns the mean, standard deviation, mean gradient and standard deviation gradient at X.
         """
         return print('Not Implemented')
+
+    def get_fmin(self):
+        return self.model.y_min

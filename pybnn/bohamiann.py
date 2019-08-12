@@ -223,6 +223,8 @@ class Bohamiann(BaseModel):
             else:
                 y_train_ = torch.from_numpy(y_train).float()
 
+        self.y_min = np.min(y_train_)
+
         train_loader = infinite_dataloader(
             data_utils.DataLoader(
                 data_utils.TensorDataset(x_train_, y_train_),

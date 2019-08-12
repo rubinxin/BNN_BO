@@ -81,7 +81,7 @@ if __name__ == '__main__':
     parser.add_argument('-m', '--model', help='Surrogate model: GP or MCDROP or MCCONC or DNGO or BOHAM or LCBNN',
                         default='LCBNN', type=str)
     parser.add_argument('-acq', '--acq_func', help='Acquisition function: LCB, EI, MES',
-                        default='LCB', type=str)
+                        default='EI', type=str)
     parser.add_argument('-bm', '--batch_opt', help='Batch option: CL, KB',
                         default='CL', type=str)
     parser.add_argument('-b', '--batch_size', help='BO Batch size. Default = 1',
@@ -91,7 +91,7 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--nseeds', help='Number of random initialisation. Default = 20',
                         default=3, type=int)
     parser.add_argument('-uo', '--util_opt', help='Utility function type for Loss Calibration: se_yclip, se_y ,Default=se_y',
-                        default='se_prod_y', type=str)
+                        default='se_ytrue_clip', type=str)
     parser.add_argument('-a', '--actv', help='Activation function type: tanh, relu, Default=tanh',
                         default='tanh', type=str)
 

@@ -128,9 +128,9 @@ class MCCONCRETEDROP(BaseModel):
     def __init__(self, batch_size=10, num_epochs=500,
                  learning_rate=0.01,
                  adapt_epoch=5000, n_units_1=50, n_units_2=50, n_units_3=50,
-                 length_scale = 1e-4, T = 100, regu = False, mc_tau=False,
-                 normalize_input=True, normalize_output=True, rng=None, gpu=True, actv='tanh',
-                 init_p_min = 0.1, init_p_max = 0.1):
+                 length_scale = 1e-4, T = 50, regu = False, mc_tau=False,
+                 normalize_input=False, normalize_output=True, seed=None, gpu=True, actv='tanh',
+                 init_p_min = 0.1, init_p_max = 0.1, model_saving_path='./'):
         """
         This module performs MC Dropout for a fully connected
         feed forward neural network.
@@ -164,13 +164,15 @@ class MCCONCRETEDROP(BaseModel):
         rng: random seed
 
         """
-        if rng is None:
+        if seed is None:
             self.rng = np.random.RandomState(np.random.randint(0, 10000))
         else:
-            self.rng = np.random.RandomState(rng)
+            self.rng = np.random.RandomState(seed)
 
-        self.seed = rng
+        self.seed = seed
         torch.manual_seed(self.seed)
+        np.random.seed(self.seed)
+        torch.cuda.manual_seed(self.seed)
 
         self.X = None
         self.y = None
@@ -197,9 +199,10 @@ class MCCONCRETEDROP(BaseModel):
         self.adapt_epoch = adapt_epoch # TODO check
         self.network = None
         self.models = []
+        self.model_saving_path = model_saving_path
 
     @BaseModel._check_shapes_train
-    def train(self, X, y, itr=0, saving_path = None):
+    def train(self, X, y, itr=0):
         """
         Trains the model on the provided data.
 
@@ -227,9 +230,9 @@ class MCCONCRETEDROP(BaseModel):
             self.y = y
 
         self.y = self.y[:, None]
+        self.y_min = np.min(self.y)
 
         N = self.X.shape[0]
-
 
         # Check if we have enough points to create a minibatch otherwise use all data points
         if N <= self.batch_size:
@@ -247,9 +250,9 @@ class MCCONCRETEDROP(BaseModel):
                                lr=self.init_learning_rate)
 
         if itr > 0:
-            model_loading_path = os.path.join(saving_path,
+            model_load_path = os.path.join(self.model_saving_path,
                                               f'concdrop_k={itr-1}_{self.actv}_n{self.n_units_1}_e{self.num_epochs}.pt')
-            network.load_state_dict(torch.load(model_loading_path))
+            network.load_state_dict(torch.load(model_load_path))
 
         if self.gpu:
             network = network.to(self.device)
@@ -297,9 +300,9 @@ class MCCONCRETEDROP(BaseModel):
 
         self.model = network
         # Saving models
-        model_saving_path = os.path.join(saving_path,
+        model_save_path = os.path.join(self.model_saving_path,
                                          f'concdrop_k={itr}_{self.actv}_n{self.n_units_1}_e{self.num_epochs}.pt')
-        torch.save(network.state_dict(), model_saving_path)
+        torch.save(network.state_dict(), model_save_path)
         print('concdrop model saved')
 
         # Estimate aleatoric uncertainty (overall tau^-1)
@@ -409,7 +412,7 @@ class MCCONCRETEDROP(BaseModel):
         e_v = e_v.flatten()
         a_v = a_v.flatten()
 
-        return m, v, e_v, a_v
+        return m, v
 
     @BaseModel._check_shapes_predict
     def validate(self, X_test, Y_test):

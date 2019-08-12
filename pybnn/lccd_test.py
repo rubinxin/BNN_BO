@@ -119,9 +119,9 @@ class LCCD(BaseModel):
                  learning_rate=0.01,
                  adapt_epoch=5000, n_units_1=50, n_units_2=50, n_units_3=50,
                  length_scale = 1e-1, T = 100, mc_tau=False, regu=False,
-                 normalize_input=True, normalize_output=True, rng=42,
+                 normalize_input=True, normalize_output=True, seed=42,
                  loss_cal=True, lc_burn=1, util_type='se_y', gpu=True, actv='tanh',
-                 init_p_min=0.1, init_p_max=0.1):
+                 init_p_min=0.1, init_p_max=0.1, model_saving_path='./'):
         """
         This module performs MC Dropout for a fully connected
         feed forward neural network.
@@ -156,12 +156,12 @@ class LCCD(BaseModel):
 
         """
 
-        if rng is None:
+        if seed is None:
             self.rng = np.random.RandomState(np.random.randint(0, 10000))
         else:
-            self.rng = np.random.RandomState(rng)
+            self.rng = np.random.RandomState(seed)
 
-        self.seed = rng
+        self.seed = seed
         torch.manual_seed(self.seed)
         np.random.seed(self.seed)
         torch.cuda.manual_seed(self.seed)
@@ -197,9 +197,10 @@ class LCCD(BaseModel):
         self.adapt_epoch = adapt_epoch # TODO check
         self.network = None
         self.models = []
+        self.model_saving_path = model_saving_path
 
     @BaseModel._check_shapes_train
-    def train(self, X, y, itr=0, n_per_itr = 5, saving_path=None):
+    def train(self, X, y, itr=0):
         """
         Trains the model on the provided data.
 
@@ -227,6 +228,7 @@ class LCCD(BaseModel):
             self.y = y
 
         self.y = self.y[:, None]
+        self.y_min = np.min(self.y)
 
         N = self.X.shape[0]
         # Check if we have enough points to create a minibatch otherwise use all data points
@@ -245,10 +247,10 @@ class LCCD(BaseModel):
                       p_min=self.p_min, p_max=self.p_max)
 
         if itr > 0:
-            model_loading_path = os.path.join(saving_path,
+            model_load_path = os.path.join(self.model_saving_path,
                                               f'lccd_k={itr-1}_{self.actv}_{self.util_type}_'
                                               f'n{self.n_units_1}_e{self.num_epochs}.pt')
-            network.load_state_dict(torch.load(model_loading_path))  # TODO:check this
+            network.load_state_dict(torch.load(model_load_path))  # TODO:check this
 
         if self.gpu:
             network = network.to(self.device)
@@ -291,16 +293,6 @@ class LCCD(BaseModel):
                 optimizer.zero_grad()
                 output, log_var, regularization = network(inputs)
                 # output, regularization = network(inputs)
-
-                # # Estimate log_var empirically
-                # if self.mc_tau:
-                #     minbatch_samples = [network(inputs) for _ in range(self.T)]
-                #     y_minibatch_predict_samples = torch.stack([tup[0] for tup in minbatch_samples])
-                #     minibatch_var = torch.mean(torch.mean((y_minibatch_predict_samples - targets)**2,0))
-                # else:
-                #     minibatch_var = torch.mean((output - targets)**2)
-                #
-                # minibatch_log_var = torch.log(minibatch_var)
 
                 if self.regu:
 
@@ -372,19 +364,19 @@ class LCCD(BaseModel):
         self.lc = lc
 
         # Saving models
-        model_saving_path = os.path.join(saving_path,
+        model_save_path = os.path.join(self.model_saving_path,
                                          f'lccd_k={itr}_{self.actv}_{self.util_type}_'
                                          f'n{self.n_units_1}_e{self.num_epochs}.pt')
-        torch.save(network.state_dict(), model_saving_path)  # TODO:check this
+        torch.save(network.state_dict(), model_save_path)  # TODO:check this
         print('lccd model saved')
 
         # Estimate aleatoric uncertainty
-        X_train_tensor = Variable(torch.FloatTensor(self.X))
-        if self.gpu:
-            X_train_tensor = X_train_tensor.to(self.device)
-        y_train_mc_samples = [network(X_train_tensor) for _ in range(self.T)]
-        y_train_predict_samples = torch.stack([tup[0] for tup in y_train_mc_samples]).view(self.T, N).cpu().data.numpy()
-        self.aleatoric_uncertainty = np.mean(np.mean((y_train_predict_samples - self.y.flatten())**2, 0))
+        # X_train_tensor = Variable(torch.FloatTensor(self.X))
+        # if self.gpu:
+        #     X_train_tensor = X_train_tensor.to(self.device)
+        # y_train_mc_samples = [network(X_train_tensor) for _ in range(self.T)]
+        # y_train_predict_samples = torch.stack([tup[0] for tup in y_train_mc_samples]).view(self.T, N).cpu().data.numpy()
+        # self.aleatoric_uncertainty = np.mean(np.mean((y_train_predict_samples - self.y.flatten())**2, 0))
 
         y_utils_average = y_utils / y_utils_counts
         train_mse_loss_all_epoch = np.array(train_mse_loss_all_epoch[2:])
@@ -481,7 +473,7 @@ class LCCD(BaseModel):
         e_v = e_v.flatten()
         a_v = a_v.flatten()
 
-        return m, v, e_v, a_v
+        return m, v
 
     @BaseModel._check_shapes_predict
     def validate(self, X_test, Y_test):

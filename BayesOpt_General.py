@@ -27,7 +27,7 @@ class Bayes_opt():
         self.saving_path = saving_path
 
     def initialise(self, X_init=None, Y_init=None, kernel=None, n_fmin_samples=1, model_type='GP',
-                   n_hidden=[50, 50, 50], bo_method='LCB', batch_option='CL', batch_size=1, seed=42, util_type='se_y',
+                   n_hidden=[50, 50, 50], bo_method='LCB', batch_option='CL', batch_size=1, seed=42, util_type='se_ytrue_clip',
                    actv_func='tanh'):
 
         assert X_init.ndim == 2, "X_init has to be 2D array"
@@ -53,8 +53,11 @@ class Bayes_opt():
         mini_batch = 10
         T = 100
         l_s = 1e-1
+        dropout_p = 0.05
         n_epochs = 1000
         activation = actv_func
+        normalise_X = False
+        normalise_Y = True
 
         # Specify the model
         if model_type == 'GP':
@@ -67,23 +70,29 @@ class Bayes_opt():
 
         elif model_type == 'MCDROP':
             self.model = MCDROPWarp(mini_batch_size=mini_batch, num_epochs= n_epochs, n_units=n_hidden,
-                                    dropout = 0.05, length_scale = l_s, T = T, seed=seed, actv=activation)
+                                    dropout = dropout_p, length_scale = l_s, T = T, seed=seed, actv=activation,
+                                    saving_path = self.saving_path, normalize_input=normalise_X, normalize_output=normalise_Y)
         elif model_type == 'MCCONC':
             self.model = MCCONCDROPWarp(mini_batch_size=mini_batch, num_epochs= n_epochs, n_units=n_hidden,
-                                        length_scale=l_s, T = T, seed=seed, actv=activation)
+                                        length_scale=l_s, T = T, seed=seed, actv=activation,
+                                    saving_path = self.saving_path, normalize_input=normalise_X, normalize_output=normalise_Y)
         elif model_type == 'LCBNN':
             self.model = LCBNNWarp(mini_batch_size=mini_batch,num_epochs= n_epochs, n_units=n_hidden,
-                                   dropout=0.05,length_scale=l_s, T=T, util_type=util_type, seed=seed, actv=activation)
+                                   dropout=dropout_p,length_scale=l_s, T=T, util_type=util_type, seed=seed, actv=activation,
+                                    saving_path = self.saving_path, normalize_input=normalise_X, normalize_output=normalise_Y)
 
         elif model_type == 'LCCD':
             self.model = LCCDWarp(mini_batch_size=mini_batch, num_epochs=n_epochs, n_units=n_hidden,
-                                  length_scale=l_s, T=T, util_type=util_type, seed=seed, actv=activation)
+                                  length_scale=l_s, T=T, util_type=util_type, seed=seed, actv=activation,
+                                    saving_path = self.saving_path, normalize_input=normalise_X, normalize_output=normalise_Y)
 
         elif model_type == 'DNGO':
-            self.model = DNGOWrap(mini_batch_size=mini_batch,num_epochs= n_epochs, n_units=n_hidden, seed=seed)
+            self.model = DNGOWrap(mini_batch_size=mini_batch,num_epochs= n_epochs, n_units=n_hidden, seed=seed,
+                                 normalize_input = normalise_X, normalize_output = normalise_Y)
 
         elif model_type == 'BOHAM':
-            self.model = BOHAMIANNWarp(num_samples=6000, keep_every=50, seed=seed)
+            self.model = BOHAMIANNWarp(num_samples=6000, keep_every=50, seed=seed,
+                                       normalize_input=normalise_X, normalize_output=normalise_Y)
 
         # Specify acquisition function
         if self.bo_method == 'EI':
@@ -129,10 +138,10 @@ class Bayes_opt():
             self.X = np.vstack((self.X, x_next_batch))
             self.Y = np.vstack((self.Y, y_next_batch))
 
-            file_name = self.saving_path + f"s{self.seed}_itr{k}"
+            # file_name = self.saving_path + f"s{self.seed}_itr{k}"
             #  update GP model with new data
             start_time2 = time.time()
-            self.model._update_model(self.X, self.Y, file_name = file_name)
+            self.model._update_model(self.X, self.Y)
             t_update_model = time.time()- start_time2
             time_record[k,1] =  t_update_model
 
